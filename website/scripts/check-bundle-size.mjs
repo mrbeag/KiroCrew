@@ -54,7 +54,8 @@ export const CHUNK_BUDGETS = {
   // Re-measured 2026-08-27 at 702 KB: the previous `measured 641 KB` note was
   // ~60 KB stale, which left main sitting a few hundred bytes under its own
   // ceiling, so any PR adding an English string tripped this gate rather than
-  // the new library or surface it exists to catch.
+  // the new library or surface it exists to catch. This measurement includes
+  // the structured-monitor form's labels and provider guidance.
   t: 740 * KB, // measured 702 KB
 
   // Pierre editor implementation (PR #4072 replaced Monaco, whose
