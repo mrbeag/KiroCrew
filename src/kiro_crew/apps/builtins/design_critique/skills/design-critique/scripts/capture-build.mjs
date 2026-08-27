@@ -22,6 +22,7 @@ import { existsSync, readFileSync, statSync, mkdirSync, readdirSync } from 'node
 import { join, resolve, extname, isAbsolute } from 'node:path'
 import { tmpdir } from 'node:os'
 import { getPlaywright } from './ensure-playwright.mjs'
+import { installSsrfGuard } from './ssrf-guard.mjs'
 
 // Build outputs worth trying, best first. storybook-static is the richest:
 // every component in every state, already rendered.
@@ -235,6 +236,10 @@ async function main() {
   try {
     for (const route of routes) {
       const page = await browser.newPage({ viewport: { width: opt.width, height: opt.height } })
+      // The served base is our own loopback server (allowed for THIS origin only);
+      // the guard blocks a built page's redirect/subresource to any other private
+      // or loopback address.
+      await installSsrfGuard(page, base)
       const url = base + (route.startsWith('/') ? route : '/' + route)
       let chars = 0
       try {
