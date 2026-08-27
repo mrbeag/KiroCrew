@@ -47,6 +47,19 @@ const bridge = {
   updateHitbox: vi.fn(),
   setMenuHitbox: vi.fn(),
   contextMenuAction: vi.fn(),
+  // Single-active-overlay model: the pet renders only once main tells it it is the
+  // active display. Simulate the active overlay so these render assertions hold
+  // (a background overlay would receive false and draw nothing).
+  onSetActive: vi.fn((cb: (active: boolean, x?: number, y?: number, isDragging?: boolean) => void) => {
+    cb(true)
+    return () => {}
+  }),
+  onDragListenMouseUp: vi.fn(() => () => {}),
+  onDragUpdate: vi.fn(() => () => {}),
+  onDragEnded: vi.fn(() => () => {}),
+  dragStart: vi.fn(),
+  dragEnd: vi.fn(),
+  dragMouseUp: vi.fn(),
 }
 vi.mock('../apps/crew-companion/petBridge', () => ({ petBridge: bridge }))
 // Both harnesses re-import the entry per test with `vi.resetModules()`, and the

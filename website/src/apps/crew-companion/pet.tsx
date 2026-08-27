@@ -203,6 +203,18 @@ function Companion() {
   /** Where the press began, for the tap-vs-drag test in onClick. */
   const clickDownPt = useRef<{ x: number; y: number } | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
+  // Which display draws the companion. The main process elects ONE active overlay
+  // and tells every other it is inactive, so only one ghost is ever shown. Starts
+  // FALSE and waits for set-active(true): openPetWindow always elects exactly one
+  // active display and re-sends the flag after load, so a secondary monitor never
+  // briefly flashes the pet before its set-active(false) arrives (the very
+  // one-ghost-per-screen regression this change removes).
+  const [isActive, setIsActive] = useState(false)
+  // Mirror isActive into a ref so the mount-armed pending poll reads the CURRENT
+  // value without re-arming: only the active overlay may drain the shared reminder
+  // cursor, or an inactive one would advance it past a fire it never shows.
+  const isActiveRef = useRef(isActive)
+  isActiveRef.current = isActive
   // Peek/dock state the drag hook drives when the companion is left at a screen edge.
   // Centralised in useEdgeHide so `setIsPeeking` updates `isPeekingRef` SYNCHRONOUSLY
   // — useDrag reads that ref inside its mouse handlers, so a render-lagged ref (the
@@ -222,7 +234,7 @@ function Companion() {
    */
   const { mood, setMood, clearPersistentMood } = useMood()
 
-  const { pos, setPos, onMouseDown, dragging, posReady, isDragging } = useDrag(
+  const { pos, setPos, onMouseDown, dragging, dragPollingStarted, posReady, isDragging } = useDrag(
     {
       x: Math.max(0, window.innerWidth - PET_PX - 28),
       y: Math.max(0, window.innerHeight - PET_PX - 96),
@@ -240,6 +252,59 @@ function Companion() {
     getGrip: () => dragGrip({}),
     },
   )
+
+  // The main process elects the active overlay. On a live drag hand-off onto this
+  // display it also passes the local landing point and that the gesture is still
+  // held, so we adopt the drag in flight instead of the pet popping in at rest.
+  useEffect(() => {
+    const off = petBridge.onSetActive?.((active, x, y, isDragging) => {
+      // DEACTIVATION must land synchronously (not wait for the line-217 render
+      // mirror): a poll awaiting /pending on this overlay when it is handed off has
+      // to see the inactive state at its post-await gate, or the now-hidden overlay
+      // would commit the shared cursor past a reminder it never showed and the newly
+      // active display would skip it (data loss). Activation stays render-driven —
+      // its backlog drain is timing-sensitive and must not run a render early.
+      if (!active) isActiveRef.current = false
+      setIsActive(active)
+      if (active) {
+        if (isDragging && typeof x === 'number' && typeof y === 'number') {
+          // Adopt the drag main is already polling: mark polling started so this
+          // overlay does not fire a SECOND dragStart, and take the entry point.
+          dragging.current = true
+          dragPollingStarted.current = true
+          setPos({ x, y })
+        }
+      } else {
+        // Handed off to another display: drop our local drag state so useDrag's 2s
+        // stuck-timer (or a stray mouseup) can't fire a late dragEnd or save stale
+        // coordinates for a drag this overlay no longer owns.
+        dragging.current = false
+        dragPollingStarted.current = false
+      }
+    })
+    // Our listener is attached now — tell main we're ready so it (re)sends this
+    // overlay's active state. The main-process initial send may have fired before
+    // this effect mounted (e.g. a slow theme load), which would otherwise leave the
+    // active overlay hidden forever.
+    petBridge.petReady?.()
+    return off
+  }, [dragging, dragPollingStarted, setPos])
+
+  // At drag-start the main process broadcasts onDragListenMouseUp; while it holds we
+  // watch for the mouseup and report it back, so a drag that ends over this overlay
+  // is caught even though the gesture began on another display.
+  useEffect(() => {
+    let onUp: (() => void) | null = null
+    const detach = () => {
+      if (onUp) { window.removeEventListener('mouseup', onUp); onUp = null }
+    }
+    const off = petBridge.onDragListenMouseUp?.(() => {
+      detach()
+      onUp = () => { petBridge.dragMouseUp?.(); detach() }
+      window.addEventListener('mouseup', onUp)
+    })
+    return () => { off?.(); detach() }
+  }, [])
 
   /**
    * Playful idle motion — the ported `usePlayfulMotion` hook. ONE rAF loop mutates
@@ -706,6 +771,10 @@ function Companion() {
     let stopped = false
 
     const poll = async () => {
+      // Only the active overlay drains reminders. An inactive overlay (a non-active
+      // display) advancing the shared cursor would consume a fire it never renders —
+      // the data-loss the GPT review flagged. It resumes when it becomes active.
+      if (!isActiveRef.current) return
       try {
         const since = cursorRef.current
         const r = await fetch(`${PENDING_PATH}?since=${since}`, {
@@ -732,6 +801,21 @@ function Companion() {
           data = (await again.json()) as { cursor: number; fires: Fire[] }
           if (stopped) return
         }
+
+        // Commit-safety invariant: act on this response ONLY if the world we captured
+        // is still current — this overlay is STILL active AND no other poll or hand-off
+        // advanced the SHARED cursor while our fetch was in flight. The top-of-poll gate
+        // ran BEFORE the await, so every hand-off race lands here:
+        //  • deactivated mid-fetch → !isActiveRef.current (else: drop a reminder)
+        //  • reactivated A→B→A after B moved the cursor, or any concurrent poll that
+        //    advanced it → since !== readStoredCursor() (else: our stale, lower
+        //    `since`-based commit REWINDS the cursor and replays already-shown reminders)
+        // Compared against readStoredCursor() (the shared source of truth the other
+        // overlay writes), NOT the in-memory cursorRef, which the drain effect only
+        // refreshes AFTER React commits — a stale poll resuming in that render→effect
+        // gap would otherwise still match. Either mismatch: a newer poll owns the
+        // cursor; bail without committing.
+        if (!isActiveRef.current || since !== readStoredCursor()) return
 
         // Window commands the dashboard page recorded (Open panel / Change
         // avatar). The page has no bridge of its own, so it enqueues the intent
@@ -878,6 +962,18 @@ function Companion() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: starts poll loop once, deps are stable refs/callbacks
   }, [])
 
+  // When this overlay becomes the active one, drain any reminders that queued while
+  // it was inactive right away, instead of waiting up to a full poll interval.
+  useEffect(() => {
+    if (isActive) {
+      // Refresh from the shared stored cursor before draining: while inactive this
+      // overlay did not advance it, so an in-memory cursor left from mount is stale
+      // and would re-show a reminder the previously-active display already showed.
+      cursorRef.current = readStoredCursor()
+      pollNowRef.current?.()
+    }
+  }, [isActive])
+
 
   // ── Local aliveness ─────────────────────────────────────────────────────
   // The companion stays at its home spot and only does small nearby fidgets (a
@@ -998,7 +1094,7 @@ function Companion() {
   // menu reports its own rect separately (PetContextMenu → petBridge.setMenuHitbox).
   // `placement` is null until the bubble is measured, so the bubble rect is reported
   // once it lands.
-  useMouseForward({ pos, bubbleRect: placement?.rect ?? null, dragging })
+  useMouseForward({ pos, bubbleRect: placement?.rect ?? null, dragging, isActive })
 
   // Playful motion runs only when the companion is settled — not while it is being
   // dragged, walking, or docked at an edge. Set every render so the rAF loop sees
@@ -1033,7 +1129,7 @@ function Companion() {
 
   return (
     <div className="cc-pet-layer">
-      {menuAt ? (
+      {isActive && menuAt ? (
         <div className="cc-menu-host">
           <PetContextMenu
             x={menuAt.x}
@@ -1044,7 +1140,7 @@ function Companion() {
         </div>
       ) : null}
 
-      {bubble ? (
+      {isActive && bubble ? (
         <div
           ref={bubbleHostRef}
           className="cc-bubble-host"
@@ -1072,6 +1168,7 @@ function Companion() {
       ) : null}
 
       {/* The only element that accepts input; everything else is click-through. */}
+      {isActive ? (
       <div
         className="cc-pet"
         onMouseDown={(e) => {
@@ -1191,6 +1288,7 @@ function Companion() {
           />
         </div>
       </div>
+      ) : null}
     </div>
   )
 }
