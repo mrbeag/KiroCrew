@@ -390,3 +390,25 @@ test("the overlay registers the cursor-hitbox channels the renderer reports to",
     stub.restore();
   }
 });
+
+test("the turn-off IPC closes every overlay immediately", () => {
+  const stub = stubElectron();
+  try {
+    const { overlay, index } = loadModules();
+    overlay.setOverlayTarget("http://localhost:5476", "cred");
+    overlay.openPetWindow();
+    assert.ok(overlay.petWindowCount() > 0, "overlays are open first");
+    index.initCrewCompanion({
+      backendUrl: "http://127.0.0.1:9",
+      fetchLocalToken: async () => "cred",
+      glog: () => {},
+    });
+    // The renderer sends this after its disable POST succeeds. It must close the
+    // overlay at once, not leave it until the next ~5s reconcile tick.
+    stub.ipcHandlers["crew-companion:turn-off"]();
+    assert.strictEqual(overlay.petWindowCount(), 0, "overlay closed immediately on turn-off");
+    index.shutdownCrewCompanion();
+  } finally {
+    stub.restore();
+  }
+});
