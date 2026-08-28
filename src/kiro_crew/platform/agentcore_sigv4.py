@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 # Owning-module constants (code-style).
 SIGV4_SERVICE = "bedrock-agentcore"
 PROXY_HOST = "127.0.0.1"
+# Prefer a stable loopback port so a rebuilt kirocrew.json survives a
+# gateway restart. Bind failure falls back to an ephemeral port; session
+# inject then carries the live listen URL.
+PROXY_PREFERRED_PORT = 18765
+PROXY_PORT_ENV = "KIROCREW_AGENTCORE_PROXY_PORT"
 PROXY_BODY_MAX_BYTES = 16 * 1024 * 1024
 PROXY_SOCKET_TIMEOUT_SECS = 300.0
 _GATEWAY_HOST_MARKER = ".gateway.bedrock-agentcore."
@@ -53,6 +58,26 @@ _ALLOWED_METHODS = frozenset({"GET", "POST", "DELETE", "HEAD"})
 
 _LOCK = threading.Lock()
 _PROXY: "GatewaySigV4Proxy | None" = None
+
+
+def preferred_bind_port() -> int:
+    """Port to try first: env override, else ``PROXY_PREFERRED_PORT``.
+
+    ``0`` (env or after a refused override) means bind ephemeral. An
+    out-of-range or non-integer env value is ignored.
+    """
+    raw = (os.environ.get(PROXY_PORT_ENV) or "").strip()
+    if not raw:
+        return PROXY_PREFERRED_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        return PROXY_PREFERRED_PORT
+    if port == 0:
+        return 0
+    if 1 <= port <= 65535:
+        return port
+    return PROXY_PREFERRED_PORT
 
 
 def region_from_gateway_url(url: str) -> str:
@@ -138,11 +163,21 @@ class GatewaySigV4Proxy:
         return self._httpd is not None and bool(self._listen_url)
 
     def start(self) -> str:
-        """Bind ``127.0.0.1:0`` and serve in a daemon thread. Return the listen URL."""
+        """Bind the preferred loopback port (else ephemeral). Return the listen URL."""
         if self._httpd is not None:
             return self._listen_url
         handler = self._handler_class()
-        httpd = ThreadingHTTPServer((PROXY_HOST, 0), handler)
+        preferred = preferred_bind_port()
+        try:
+            httpd = ThreadingHTTPServer((PROXY_HOST, preferred), handler)
+        except OSError:
+            if preferred == 0:
+                raise
+            logger.info(
+                "AgentCore SigV4 proxy preferred port %s in use; binding ephemeral",
+                preferred,
+            )
+            httpd = ThreadingHTTPServer((PROXY_HOST, 0), handler)
         httpd.proxy = self  # type: ignore[attr-defined]
         port = httpd.server_address[1]
         path = self._upstream.path or "/mcp"

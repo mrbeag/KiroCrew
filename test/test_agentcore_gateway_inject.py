@@ -29,6 +29,7 @@ def _clear_live_agentcore_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("KIROCREW_AGENTCORE_POSTURE", raising=False)
     monkeypatch.delenv("KIROCREW_AGENTCORE_WORKLOAD_NAME", raising=False)
     monkeypatch.delenv("KIROCREW_AGENTCORE_AWS", raising=False)
+    monkeypatch.delenv("KIROCREW_AGENTCORE_PROXY_PORT", raising=False)
 
 
 class _CompanionIdentity(DefaultAgentIdentityProvider):
@@ -306,6 +307,10 @@ def test_workload_rebuild_is_url_only_no_sidecar(
 
     asyncio.run(_run())
     assert inbound_sidecar_path("dashboard:1").exists() is False
+    from kiro_crew.platform.agentcore_gateway import session_gateway_servers
+
+    # Companion https spec is the unsigned hostname — never session-inject it.
+    assert session_gateway_servers("dashboard:1") == []
 
 
 def test_login_vend_writes_sidecar_not_agent_file(
@@ -391,6 +396,62 @@ def test_token_never_appears_in_logs_or_sel(caplog: pytest.LogCaptureFixture) ->
     blob = json.dumps(inbound)
     assert _TOKEN not in blob
     assert inbound[0].get("outcome") == "ok"
+
+
+def test_is_loopback_listen_url() -> None:
+    from kiro_crew.platform.agentcore_gateway import is_loopback_listen_url
+
+    assert is_loopback_listen_url("http://127.0.0.1:18765/mcp") is True
+    assert is_loopback_listen_url("http://localhost:9/mcp") is True
+    assert is_loopback_listen_url("http://[::1]:9/mcp") is True
+    assert is_loopback_listen_url(_GATEWAY_URL) is False
+    assert is_loopback_listen_url("https://127.0.0.1:18765/mcp") is False
+    assert is_loopback_listen_url("http://example.test/mcp") is False
+    assert is_loopback_listen_url("") is False
+
+
+def test_workload_session_injects_live_loopback_proxy() -> None:
+    """session/new must outrank a stale agent-file port after restart."""
+    from kiro_crew.platform.agentcore_gateway import (
+        attach_gateway_inbound,
+        session_gateway_servers,
+    )
+
+    listen = "http://127.0.0.1:18765/mcp"
+    _install(posture="workload", spec={"url": listen})
+
+    async def _run() -> None:
+        assert await attach_gateway_inbound(_principal()) is None
+
+    import asyncio
+
+    asyncio.run(_run())
+    assert session_gateway_servers("dashboard:1") == [{"name": "agentcore-gateway", "url": listen}]
+
+
+def test_workload_session_never_injects_unsigned_https() -> None:
+    from kiro_crew.platform.agentcore_gateway import session_gateway_servers
+
+    _install(posture="workload", spec={"url": _GATEWAY_URL})
+    assert session_gateway_servers("dashboard:1") == []
+
+
+def test_login_without_sidecar_does_not_inject_loopback() -> None:
+    from kiro_crew.platform.agentcore_gateway import session_gateway_servers
+
+    _install(posture="login", spec={"url": "http://127.0.0.1:18765/mcp"})
+    assert session_gateway_servers("dashboard:1") == []
+
+
+def test_identity_off_does_not_inject_loopback() -> None:
+    from kiro_crew.platform.agentcore_gateway import session_gateway_servers
+
+    _install(
+        posture="workload",
+        spec={"url": "http://127.0.0.1:18765/mcp"},
+        identity=DefaultAgentIdentityProvider(),
+    )
+    assert session_gateway_servers("dashboard:1") == []
 
 
 def test_companion_extra_headers_stripped_on_workload_rebuild(

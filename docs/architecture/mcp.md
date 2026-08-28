@@ -169,7 +169,11 @@ and attach omit Gateway. Workload posture emits a URL-only Gateway spec
 at rebuild (IAM inbound, no JWT sidecar). The AWS extra rewrites that
 URL to a localhost SigV4 proxy (`platform/agentcore_sigv4.py`) so
 kiro-cli never presents an unsigned Gateway hostname, and keeps the
-ordinary merge of Kiro defaults. Companion extras that carry `headers` / `Authorization`
+ordinary merge of Kiro defaults. The proxy prefers port `18765`
+(`KIROCREW_AGENTCORE_PROXY_PORT` overrides; bind failure falls back
+to ephemeral). After a gateway restart the agent-file port may be
+stale; `session_gateway_servers` injects the live loopback listen
+URL onto `session/new` (never the unsigned https hostname). Companion extras that carry `headers` / `Authorization`
 are stripped before the agent file is written. Gateway/token work stays
 behind the three-conjunct identity probe (adapter AND capability AND
 known posture). Gateway is unpooled: each session has its own inbound

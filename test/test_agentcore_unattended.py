@@ -159,7 +159,32 @@ async def test_workload_m2m_cron_keeps_agent_file_gateway() -> None:
     _install(posture="workload", kind="m2m")
     assert await attach_gateway_inbound(_cron()) is None
     assert inbound_sidecar_path("cron:job1").exists() is False
+    # Companion https spec is the unsigned hostname — keep the agent-file
+    # Gateway rather than injecting it unsigned onto session/new.
     assert session_gateway_servers("cron:job1") == []
+
+
+@pytest.mark.asyncio
+async def test_workload_m2m_cron_injects_live_loopback_proxy() -> None:
+    from kiro_crew.platform.agentcore_gateway import (
+        GATEWAY_SERVER_NAME,
+        attach_gateway_inbound,
+        inbound_sidecar_path,
+        session_gateway_servers,
+    )
+
+    listen = "http://127.0.0.1:18765/mcp"
+    base = build_default_context(KiroCrewConfig())
+    set_context(
+        dataclasses.replace(
+            base,
+            agent_identity=_CompanionIdentity(spec={"url": listen}, kind="m2m"),
+            governance=_ceiling(posture="workload"),
+        )
+    )
+    assert await attach_gateway_inbound(_cron()) is None
+    assert inbound_sidecar_path("cron:job1").exists() is False
+    assert session_gateway_servers("cron:job1") == [{"name": GATEWAY_SERVER_NAME, "url": listen}]
 
 
 @pytest.mark.asyncio

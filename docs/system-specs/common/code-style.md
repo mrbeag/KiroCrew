@@ -42,7 +42,7 @@ Paths below are relative to `src/kiro_crew/`.
 | Managed MCP server specs | `agent.py` | `_MANAGED_MCP_SERVERS`: which servers are auto-registered and refreshed while preserving user customizations. |
 | AgentCore Gateway MCP name + inbound sidecar dir | `platform/agentcore_gateway.py` | `GATEWAY_SERVER_NAME` (`agentcore-gateway`), `INBOUND_DIR_NAME` (`agentcore-inbound`), `UNATTENDED_SESSION_PREFIXES`, companion `status()` keys (`authorizationUrl`, `credentialKind`, `vaultedOwnerToken`), sidecar states (`SIDECAR_LIVE` / `DENIED` / `EXPIRED` / `ABSENT`), `REASON_EXPIRED`. |
 | AgentCore extra install | `platform/agentcore_aws.py` | `DEFAULT_WORKLOAD_NAME` (`kirocrew`), `EXTRA_CODE_*`, `EXTRA_REQ_WHEEL`, `AGENTCORE_GATEWAY_URL_MAX`, `_PIP_TIMEOUT_SECS`, `ENV_*` AgentCore names. |
-| AgentCore Gateway SigV4 proxy | `platform/agentcore_sigv4.py` | `SIGV4_SERVICE` (`bedrock-agentcore`), `PROXY_HOST` (`127.0.0.1`), `PROXY_BODY_MAX_BYTES`, `PROXY_SOCKET_TIMEOUT_SECS`. |
+| AgentCore Gateway SigV4 proxy | `platform/agentcore_sigv4.py` | `SIGV4_SERVICE` (`bedrock-agentcore`), `PROXY_HOST` (`127.0.0.1`), `PROXY_PREFERRED_PORT` (`18765`), `PROXY_PORT_ENV` (`KIROCREW_AGENTCORE_PROXY_PORT`), `PROXY_BODY_MAX_BYTES`, `PROXY_SOCKET_TIMEOUT_SECS`. |
 | AgentCore Gateway catalog | `platform/agentcore_inspect.py` | `CONTROL_CLIENT` (`bedrock-agentcore-control`), `SNAPSHOT_*` / `TOOLS_*` codes, `TARGET_DETAIL_MAX`, `LIST_PAGE_MAX`, `TOOLS_LIST_MAX`, `TOOLS_LIST_TIMEOUT_SECS`, `MCP_PROTOCOL_VERSION`. |
 | Built-in skills | `builtin_skills/<name>/SKILL.md` | Frontmatter (`always`, `triggers`, `dir`) is the skill's own contract. This is the only tree copied into a user's `~/.kiro/crew/skills/`. |
 

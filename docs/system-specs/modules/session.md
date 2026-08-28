@@ -338,7 +338,10 @@ and a core-derived `raw_id`, the same function binds the principal:
    without one the sidecar is URL-only (`oauth_challenge`) so kiro-cli
    can start its MCP OAuth challenge. Workload posture clears any leftover
    sidecar — IAM inbound, no JWT; the rebuilt agent-file URL is the
-   localhost SigV4 proxy when the AWS extra is on — except an unattended `cron:` /
+   localhost SigV4 proxy when the AWS extra is on, and
+   `session_gateway_servers` injects that live loopback URL onto
+   `session/new` so a stale ephemeral port after restart is outranked
+   (never the unsigned https Gateway hostname) — except an unattended `cron:` /
    `taskrunner:` session whose companion `status()` reports a user/OBO
    credential without a vaulted owner token: that writes a deny sidecar
    so `session/new` injects `{disabled: true}` and retracts the

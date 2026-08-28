@@ -2275,7 +2275,10 @@ class AcpClient:
 
         Login-posture AgentCore Gateway (if a live inbound sidecar exists for
         this client's session key) is appended here too. The bearer lives on
-        that sidecar, never in the agent file.
+        that sidecar, never in the agent file. Workload posture (no sidecar)
+        injects the live loopback SigV4 listen URL so session/new outranks a
+        stale agent-file port after a gateway restart; the unsigned Gateway
+        hostname is never injected.
         """
         servers = pooled_session_servers(self._mcp_gateway_overlay, self._agent, self._channel_id)
         if self._session_key:

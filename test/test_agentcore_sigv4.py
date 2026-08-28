@@ -30,6 +30,65 @@ def test_sigv4_service_and_listen_host() -> None:
     assert PROXY_HOST == "127.0.0.1"
 
 
+def test_preferred_bind_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kiro_crew.platform.agentcore_sigv4 import (
+        PROXY_PORT_ENV,
+        PROXY_PREFERRED_PORT,
+        preferred_bind_port,
+    )
+
+    monkeypatch.delenv(PROXY_PORT_ENV, raising=False)
+    assert preferred_bind_port() == PROXY_PREFERRED_PORT
+    monkeypatch.setenv(PROXY_PORT_ENV, "19001")
+    assert preferred_bind_port() == 19001
+    monkeypatch.setenv(PROXY_PORT_ENV, "0")
+    assert preferred_bind_port() == 0
+    monkeypatch.setenv(PROXY_PORT_ENV, "nope")
+    assert preferred_bind_port() == PROXY_PREFERRED_PORT
+    monkeypatch.setenv(PROXY_PORT_ENV, "99999")
+    assert preferred_bind_port() == PROXY_PREFERRED_PORT
+
+
+def test_proxy_uses_preferred_port_when_free(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kiro_crew.platform.agentcore_sigv4 import PROXY_PORT_ENV, GatewaySigV4Proxy
+
+    tmp = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    port = tmp.server_address[1]
+    tmp.server_close()
+    monkeypatch.setenv(PROXY_PORT_ENV, str(port))
+    proxy = GatewaySigV4Proxy(
+        "http://127.0.0.1:9/mcp",
+        region="us-east-1",
+        require_https=False,
+    )
+    try:
+        listen = proxy.start()
+        assert listen == f"http://127.0.0.1:{port}/mcp"
+    finally:
+        proxy.stop()
+
+
+def test_proxy_falls_back_when_preferred_port_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kiro_crew.platform.agentcore_sigv4 import PROXY_PORT_ENV, GatewaySigV4Proxy
+
+    blocker = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    occupied = blocker.server_address[1]
+    monkeypatch.setenv(PROXY_PORT_ENV, str(occupied))
+    proxy = GatewaySigV4Proxy(
+        "http://127.0.0.1:9/mcp",
+        region="us-east-1",
+        require_https=False,
+    )
+    try:
+        listen = proxy.start()
+        assert listen.startswith("http://127.0.0.1:")
+        bound = int(listen.rsplit(":", 1)[1].split("/", 1)[0])
+        assert bound != occupied
+    finally:
+        proxy.stop()
+        blocker.server_close()
+
+
 def test_sign_aws_request_adds_sigv4_headers() -> None:
     pytest.importorskip("botocore")
     from botocore.credentials import Credentials

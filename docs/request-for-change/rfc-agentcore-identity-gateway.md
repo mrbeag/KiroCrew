@@ -930,6 +930,18 @@ Closed on the agent-path honesty pass:
   `http://127.0.0.1:<port>/mcp`, and `tools/call`
   `echo-hello___echo_hello` succeeded through that listener.
 
+Closed on the OOTB session-inject pass:
+
+- Workload `attach_gateway_inbound` still clears the sidecar (IAM,
+  no JWT). `session_gateway_servers` now injects the live loopback
+  SigV4 listen URL when identity is on, so `session/new` outranks a
+  stale agent-file port after a gateway restart. A companion https
+  spec (unsigned Gateway hostname) still injects `[]`.
+- The proxy prefers `127.0.0.1:18765` so a rebuilt `kirocrew.json`
+  survives a restart when that port is free.
+  `KIROCREW_AGENTCORE_PROXY_PORT` overrides; bind failure falls
+  back to ephemeral and session inject carries the live URL.
+
 Still open (not v1 blockers):
 
 - Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP

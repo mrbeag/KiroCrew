@@ -7,8 +7,12 @@ sidecar and the only sanitizer that may put a Gateway spec on disk.
 
 Workload posture emits a URL-only spec at rebuild (IAM inbound, no JWT).
 The AWS extra rewrites that URL to a localhost SigV4 proxy; kiro-cli
-never sees the unsigned Gateway hostname. Login posture leaves Gateway
-out of ``~/.kiro/agents/kirocrew.json`` until ``attach_gateway_inbound``
+never sees the unsigned Gateway hostname. Rebuild may persist an
+ephemeral listen port; after a gateway restart that listener is gone.
+``session_gateway_servers`` therefore injects the live loopback URL so
+session/new outranks the stale agent-file entry. It never injects the
+unsigned https Gateway hostname. Login posture leaves Gateway out of
+``~/.kiro/agents/kirocrew.json`` until ``attach_gateway_inbound``
 writes a ``0600`` session sidecar; session/new reads that sidecar. A
 companion JWT becomes an ``Authorization`` header. Without one, the
 sidecar is URL-only so kiro-cli can run its MCP OAuth challenge
@@ -28,6 +32,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from kiro_crew import platform_compat
 from kiro_crew.config.paths import config_dir
@@ -76,6 +81,9 @@ _SECRET_SPEC_KEYS = frozenset({"headers", "authorization", "Authorization"})
 
 # Remote-MCP keys safe to persist on the agent file (URL-only).
 _URL_ONLY_KEYS = frozenset({"url", "type", "timeout", "disabledTools", "autoApprove"})
+
+# Hosts the SigV4 proxy may advertise. https is never loopback-listen.
+_LOOPBACK_LISTEN_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def strip_secret_spec_keys(spec: Mapping[str, Any]) -> dict[str, Any]:
@@ -136,8 +144,6 @@ def _unattended_user_permitted() -> bool:
 
 def _consent_host_path(url: str) -> str:
     """Host+path only — never a query string (state / PKCE / code)."""
-    from urllib.parse import urlparse
-
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -410,17 +416,54 @@ async def drain_expired_gateway_transport(sessions: Any, session_key: str) -> bo
     return True
 
 
-def session_gateway_servers(session_key: str) -> list[dict[str, Any]]:
-    """ACP ``mcpServers`` entries for this session's Gateway inbound, or ``[]``.
+def is_loopback_listen_url(url: str) -> bool:
+    """True for the SigV4 proxy listen URL. Never the unsigned Gateway hostname."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "http":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in _LOOPBACK_LISTEN_HOSTS
 
-    Empty when there is no live sidecar (fail closed). Two sessions never
+
+def _workload_live_proxy_servers() -> list[dict[str, Any]]:
+    """Inject the live loopback listen URL so session/new outranks a stale port.
+
+    Workload attach clears the sidecar. The agent file may still hold the
+    listen URL from the last rebuild; after a gateway restart that
+    listener is gone. ``session/new`` outranks the same-named agent-file
+    entry, so this is what keeps kiro-cli on a working proxy. Never
+    inject https — that would be the unsigned Gateway hostname.
+    """
+    if not _identity_on():
+        return []
+    if _current_posture() != "workload":
+        return []
+    sanitized = _gateway_spec_from_adapter()
+    url = str((sanitized or {}).get("url") or "")
+    if not is_loopback_listen_url(url):
+        return []
+    return [{"name": GATEWAY_SERVER_NAME, "url": url}]
+
+
+def session_gateway_servers(session_key: str) -> list[dict[str, Any]]:
+    """ACP ``mcpServers`` entries for this session's Gateway, or ``[]``.
+
+    A deny sidecar retracts Gateway. A live login sidecar supplies the
+    https URL plus optional ``Authorization``. Workload has no sidecar:
+    when identity is on, inject the live loopback SigV4 listen URL so
+    session/new outranks a stale agent-file port. Two sessions never
     share a sidecar path, so Gateway stays unpooled.
     """
     if not session_key:
         return []
     data = read_inbound_sidecar(session_key)
     if data is None:
-        return []
+        return _workload_live_proxy_servers()
     if data.get("denied") is True:
         # Session inject outranks the same-named agent-file entry (kiro-cli).
         # Workload user/OBO unattended retracts Gateway this way.

@@ -428,7 +428,11 @@ delegates to that same global. Wired sites:
   bearer when `vend_gateway_inbound_token` returns a JWT, otherwise
   URL-only for kiro-cli's MCP OAuth challenge.
   `acp/client.py` appends `session_gateway_servers(session_key)` onto the
-  existing `session/new` `mcpServers` list. An expired inbound sidecar
+  existing `session/new` `mcpServers` list. Workload has no sidecar:
+  when identity is on, that helper injects the live loopback SigV4
+  listen URL so session/new outranks a stale agent-file port after a
+  gateway restart. It never injects the unsigned https Gateway
+  hostname. An expired inbound sidecar
   drains that session's ACP child (`SessionManager.remove`, map
   preserved) before re-attach — Gateway is unpooled, so this does not
   blue-green the mcp_gateway pool.   Unattended login never
