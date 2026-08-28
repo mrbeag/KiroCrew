@@ -515,18 +515,21 @@ companion. A launched box that opted into AgentCore actually vends.
 - CLI: `kirocrew cloud launch --agentcore-gateway-url https://…`
 - Calls: `GetWorkloadAccessToken` / `GetWorkloadAccessTokenForJWT`
   via boto3 client name `bedrock-agentcore`
-- Gateway spec: URL-only from the env; never a WAT bearer
-- Login inbound: operator IdP JWT on `principal.user_jwt` (companion
-  / IdP still owns annotation)
+- Gateway spec: URL-only; never a WAT bearer. Workload posture
+  rewrites the URL to a `127.0.0.1` SigV4 proxy
+  (`platform/agentcore_sigv4.py`, service `bedrock-agentcore`)
+- Login inbound: companion IdP JWT on `principal.user_jwt` when
+  present; otherwise a URL-only sidecar so kiro-cli can start its
+  MCP OAuth challenge (`_kiro.dev/mcp/oauth_request`)
 - `status()` contains no token material
 - Do **not** register `kirocrew.plugins` (that flips enterprise
   profile / fail-closed)
 
 Still companion-owned (other repo):
 
-- Operator IdP JWT → `annotate_principal.user_jwt`
+- Operator IdP JWT → `annotate_principal.user_jwt` (optional now;
+  public login uses kiro-cli MCP OAuth when the JWT is absent)
 - Gateway + target + OAuth provider control plane
-- kiro-cli SigV4 for workload IAM `InvokeGateway` (open follow-on)
 
 ---
 

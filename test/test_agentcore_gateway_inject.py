@@ -160,7 +160,7 @@ def test_capability_off_even_if_companion_enabled_has_no_gateway(
     assert "agentcore-gateway" not in _rebuilt_servers(kiro_dir)
 
 
-def test_login_vend_none_leaves_gateway_absent(
+def test_login_vend_none_attaches_url_only_oauth_challenge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from kiro_crew.agent import rebuild_agent_config
@@ -169,20 +169,51 @@ def test_login_vend_none_leaves_gateway_absent(
         inbound_sidecar_path,
         session_gateway_servers,
     )
+    from kiro_crew.sel import sel
 
     kiro_dir = _seed_rebuild(tmp_path, monkeypatch)
     _install(posture="login", spec={"url": _GATEWAY_URL}, token=None)
     rebuild_agent_config()
     servers = _rebuilt_servers(kiro_dir)
     assert "agentcore-gateway" not in servers
+    assert _TOKEN not in json.dumps(servers)
 
-    path = inbound_sidecar_path("dashboard:1")
-    assert path.exists() is False
+    async def _run() -> None:
+        path = await attach_gateway_inbound(_principal())
+        assert path == inbound_sidecar_path("dashboard:1")
+        assert path is not None and path.exists()
+        sidecar = json.loads(path.read_text(encoding="utf-8"))
+        assert sidecar["url"] == _GATEWAY_URL
+        assert sidecar["oauth_challenge"] is True
+        assert "headers" not in sidecar
+        injected = session_gateway_servers("dashboard:1")
+        assert injected == [{"name": "agentcore-gateway", "url": _GATEWAY_URL}]
+
+    import asyncio
+
+    asyncio.run(_run())
+    inbound = [
+        e for e in sel().recent(limit=50) if e.get("operation") == "agentcore.gateway_inbound"
+    ]
+    assert inbound
+    assert inbound[0].get("outcome") == "ok"
+    assert "oauth_challenge" in str(inbound[0].get("resources") or "")
+    assert _TOKEN not in json.dumps(inbound)
+
+
+def test_login_missing_spec_still_withholds_gateway() -> None:
+    from kiro_crew.platform.agentcore_gateway import (
+        attach_gateway_inbound,
+        inbound_sidecar_path,
+        session_gateway_servers,
+    )
+
+    _install(posture="login", spec=None, token=None)
 
     async def _run() -> None:
         assert await attach_gateway_inbound(_principal()) is None
         assert session_gateway_servers("dashboard:1") == []
-        assert path.exists() is False
+        assert inbound_sidecar_path("dashboard:1").exists() is False
 
     import asyncio
 

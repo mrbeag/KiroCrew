@@ -106,8 +106,9 @@ optional `KIROCREW_AGENTCORE_GATEWAY_URL` from `--agentcore-gateway-url`.
 Default `none` is the historical launch. Destroying the stack deletes the
 identity. The launcher Policy.json grows only the control-plane
 create/delete/tag verbs — never `InvokeGateway`. The extra fetches
-`GetWorkloadAccessToken*` on the box; it does not create the Gateway or
-its targets — the operator supplies an existing MCP URL.
+`GetWorkloadAccessToken*` on the box and starts a localhost SigV4
+proxy so kiro-cli can `InvokeGateway`; it does not create the Gateway
+or its targets — the operator supplies an existing MCP URL.
 
 See-and-configure for that identity is **not** on Settings → Remote Crew.
 Each crew's own gateway owns it: **Settings → Security → Agent identity**

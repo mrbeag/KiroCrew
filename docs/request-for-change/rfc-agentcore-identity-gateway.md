@@ -715,8 +715,11 @@ client name, not the `bedrock-agentcore` SDK). CFN creates the
 standalone `AWS::BedrockAgentCore::WorkloadIdentity`. WAT is still
 first-party only — never Gateway inbound. Login inbound is the
 operator IdP JWT on `principal.user_jwt`. Workload Gateway inbound
-is IAM (URL-only spec); kiro-cli SigV4 for `InvokeGateway` is an
-open follow-on, not a signing proxy in this cut.
+is IAM: `gateway_mcp_spec()` returns a `127.0.0.1` SigV4 proxy
+(`platform/agentcore_sigv4.py`, service `bedrock-agentcore`) so
+kiro-cli never presents an unsigned Gateway URL. A WAT is still
+never a Gateway bearer. Login without a companion JWT attaches a
+URL-only sidecar so kiro-cli can run its MCP OAuth challenge.
 
 Exit: both answers recorded here. Phase 3 is blocked on (1). Phase 2
 is blocked on (2). If (1) is no, implement the local header-proxy MCP
@@ -752,7 +755,8 @@ Public-core JSON only (no AgentCore SDK):
 - `rebuild_agent_config()` withholds Kiro-global, seam-global,
   crew-store, and leftover non-managed servers when posture is
   `login` and the capability is on. Managed `kirocrew-*` still
-  emit. Gateway is absent until a live inbound token exists.
+  emit. Gateway stays out of the agent file; attach writes a session
+  sidecar (bearer JWT or URL-only OAuth challenge).
 - Posture-vs-IAM mismatch probe fails closed (no Gateway emit,
   SEL-audited).
 
@@ -774,13 +778,15 @@ has no token keys; injected messages do not vend.
 
 ### Phase 3 — Gateway MCP attach + inbound token injection
 
-Companion contributes the Gateway URL. Core injects the inbound JWT
-per session (or the header-proxy fallback). Unpooled. Expiry drains
-that session's ACP child (not the mcp_gateway pool). Fail closed on miss.
+Companion (or the in-repo extra) contributes the Gateway URL. Core
+injects inbound per session: a JWT sidecar, a URL-only OAuth-challenge
+sidecar, or — on workload — the localhost SigV4 proxy URL in the
+rebuilt agent file. Unpooled. Expiry drains a bearer sidecar's ACP
+child (not the mcp_gateway pool). Fail closed on a missing URL.
 
-Exit: a session with a valid JWT lists Gateway tools; a session
-without does not see the server; `kirocrew.json` contains no
-`Authorization` header.
+Exit: a login session with a Gateway URL lists the server (bearer or
+OAuth challenge); a session without a URL does not; `kirocrew.json`
+contains no `Authorization` header.
 
 ### Phase 4 — Human 3LO consent + unattended policy
 

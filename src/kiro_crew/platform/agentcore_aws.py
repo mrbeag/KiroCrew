@@ -11,7 +11,9 @@ inside methods so ``import kiro_crew.platform.agentcore_aws`` does not
 pull AWS into a process that never opted in.
 
 A workload access token is first-party Identity material. It is never the
-Gateway inbound credential and never appears in ``status()``.
+Gateway inbound credential and never appears in ``status()``. Workload
+``gateway_mcp_spec()`` returns a localhost SigV4 proxy URL, not the
+unsigned Gateway hostname.
 """
 
 from __future__ import annotations
@@ -162,6 +164,14 @@ def authored_gateway_url() -> str:
         return normalize_agentcore_gateway_url(raw)
     except ValueError:
         return ""
+
+
+def resolved_posture() -> str:
+    """Env posture first (systemd / launch), else the standalone home file."""
+    env = _env(ENV_POSTURE).lower()
+    if env in _CONFIGURED_POSTURES:
+        return env
+    return authored_posture() or ""
 
 
 def resolved_gateway_url() -> str:
@@ -318,6 +328,15 @@ class AwsAgentIdentityProvider:
         url = resolved_gateway_url()
         if not url.startswith("https://"):
             return None
+        # Workload inbound is IAM. kiro-cli cannot SigV4, so the spec URL
+        # is the localhost proxy — never the unsigned Gateway hostname.
+        if resolved_posture() == "workload":
+            from kiro_crew.platform.agentcore_sigv4 import ensure_workload_proxy
+
+            listen = ensure_workload_proxy(url)
+            if not listen:
+                return None
+            return {"url": listen}
         return {"url": url}
 
     async def annotate_principal(self, principal: SessionPrincipal) -> SessionPrincipal:

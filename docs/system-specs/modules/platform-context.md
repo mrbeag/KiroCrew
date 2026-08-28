@@ -419,10 +419,14 @@ delegates to that same global. Wired sites:
   additively (`setdefault`) into the agent config build + dynamic refresh
   after secret-key strip. `agent_identity.gateway_mcp_spec()` contributes
   a URL-only Gateway server on workload posture via
-  `platform.agentcore_gateway.rebuild_gateway_contribution`. Login posture
+  `platform.agentcore_gateway.rebuild_gateway_contribution`. The AWS extra
+  substitutes a `127.0.0.1` SigV4 proxy (`platform/agentcore_sigv4.py`,
+  service `bedrock-agentcore`) for that URL so kiro-cli can
+  `InvokeGateway`. Login posture
   withholds that spec at rebuild; `bind_session_principal` calls
-  `attach_gateway_inbound`, which vends through
-  `vend_gateway_inbound_token` onto a `0600` session sidecar.
+  `attach_gateway_inbound`, which writes a `0600` session sidecar —
+  bearer when `vend_gateway_inbound_token` returns a JWT, otherwise
+  URL-only for kiro-cli's MCP OAuth challenge.
   `acp/client.py` appends `session_gateway_servers(session_key)` onto the
   existing `session/new` `mcpServers` list. An expired inbound sidecar
   drains that session's ACP child (`SessionManager.remove`, map

@@ -159,13 +159,17 @@ login posture on the Default still withholds. Managed `kirocrew-core` /
 `kirocrew-cron` / `kirocrew-computer` (when that server's own `spec_gate`
 is open) still emit. A Gateway URL-only spec is **not** invented here
 under `login` — `attach_gateway_inbound` writes a `0600` session sidecar
-after `vend_gateway_inbound_token` returns a live JWT, and `session/new`
-injects that URL + `Authorization` header. `~/.kiro/agents/kirocrew.json`
-never holds the bearer. If an IAM `InvokeGateway` probe succeeds under
+when a Gateway URL exists. A vend'd JWT becomes the `Authorization`
+header; without one the sidecar is URL-only so kiro-cli can start its
+MCP OAuth challenge (`_kiro.dev/mcp/oauth_request`, already surfaced
+as Authorize). `~/.kiro/agents/kirocrew.json` never holds the bearer.
+If an IAM `InvokeGateway` probe succeeds under
 `login`, rebuild records SEL `agentcore.posture_mismatch` and both rebuild
 and attach omit Gateway. Workload posture emits a URL-only Gateway spec
-at rebuild (IAM inbound, no JWT sidecar) and keeps the ordinary merge of
-Kiro defaults. Companion extras that carry `headers` / `Authorization`
+at rebuild (IAM inbound, no JWT sidecar). The AWS extra rewrites that
+URL to a localhost SigV4 proxy (`platform/agentcore_sigv4.py`) so
+kiro-cli never presents an unsigned Gateway hostname, and keeps the
+ordinary merge of Kiro defaults. Companion extras that carry `headers` / `Authorization`
 are stripped before the agent file is written. Gateway/token work stays
 behind the three-conjunct identity probe (adapter AND capability AND
 known posture). Gateway is unpooled: each session has its own inbound

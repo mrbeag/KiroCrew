@@ -6,10 +6,14 @@ Public core never vends a token (``DefaultAgentIdentityProvider`` returns
 sidecar and the only sanitizer that may put a Gateway spec on disk.
 
 Workload posture emits a URL-only spec at rebuild (IAM inbound, no JWT).
-Login posture leaves Gateway out of ``~/.kiro/agents/kirocrew.json`` until
-``attach_gateway_inbound`` writes a ``0600`` session sidecar; session/new
-reads that sidecar. Token bytes never enter the agent file, SEL, logs, or
-``status()``.
+The AWS extra rewrites that URL to a localhost SigV4 proxy; kiro-cli
+never sees the unsigned Gateway hostname. Login posture leaves Gateway
+out of ``~/.kiro/agents/kirocrew.json`` until ``attach_gateway_inbound``
+writes a ``0600`` session sidecar; session/new reads that sidecar. A
+companion JWT becomes an ``Authorization`` header. Without one, the
+sidecar is URL-only so kiro-cli can run its MCP OAuth challenge
+(``_kiro.dev/mcp/oauth_request``). Token bytes never enter the agent
+file, SEL, logs, or ``status()``.
 """
 
 from __future__ import annotations
@@ -64,6 +68,7 @@ SIDECAR_DENIED = "denied"
 SIDECAR_EXPIRED = "expired"
 SIDECAR_ABSENT = "absent"
 REASON_EXPIRED = "expired"
+REASON_OAUTH_CHALLENGE = "oauth_challenge"
 
 # Spec keys that are bearer material or a place to hide it. Stripped before
 # any write to ~/.kiro/agents/kirocrew.json.
@@ -280,6 +285,8 @@ def rebuild_gateway_contribution() -> dict[str, dict[str, Any]]:
     Empty when identity is off, posture is not ``workload``, the companion
     spec is missing a URL, or a login-posture host can still IAM-invoke
     Gateway (mismatch — fail closed, SEL already recorded by the probe).
+    The URL is whatever ``gateway_mcp_spec()`` returned after sanitizer
+    strip — the AWS extra substitutes a ``127.0.0.1`` SigV4 proxy.
     """
     if not _identity_on():
         return {}
@@ -464,13 +471,15 @@ def _write_unattended_deny_sidecar(principal: SessionPrincipal, *, reason: str) 
 
 
 async def attach_gateway_inbound(principal: SessionPrincipal) -> Path | None:
-    """Vend a login-posture inbound token and write the session sidecar.
+    """Attach login-posture Gateway for this session, or withhold it.
 
     Workload posture clears any leftover sidecar (IAM inbound, no JWT)
     unless this is an unattended user/OBO session without a vaulted owner
     token — then a deny sidecar retracts the agent-file Gateway.
-    Login posture writes the sidecar only when vend returns a live token
-    and a URL-only spec exists. Unattended login sessions never attach.
+    Login posture writes a ``0600`` sidecar when a URL-only spec exists:
+    a vend'd JWT becomes the ``Authorization`` header; otherwise the
+    sidecar is URL-only so kiro-cli can start its MCP OAuth challenge.
+    Unattended login sessions never attach.
     """
     if not _identity_on():
         clear_inbound_sidecar(principal.session_key)
@@ -509,13 +518,8 @@ async def attach_gateway_inbound(principal: SessionPrincipal) -> Path | None:
     async def _vend() -> InboundToken | None:
         return await current_context().agent_identity.vend_gateway_inbound_token(principal)
 
-    token = await async_safe_context_call(
-        _vend,
-        fallback=None,
-        log_message="vend_gateway_inbound_token failed; Gateway withheld",
-    )
     sanitized = _gateway_spec_from_adapter()
-    if token is None or sanitized is None:
+    if sanitized is None:
         sel().log_api_access(
             caller="system",
             operation="agentcore.gateway_inbound",
@@ -528,15 +532,27 @@ async def attach_gateway_inbound(principal: SessionPrincipal) -> Path | None:
         clear_inbound_sidecar(principal.session_key)
         return None
 
+    token = await async_safe_context_call(
+        _vend,
+        fallback=None,
+        log_message="vend_gateway_inbound_token failed; attaching URL-only Gateway",
+    )
     payload: dict[str, Any] = {
         "name": GATEWAY_SERVER_NAME,
         "url": sanitized["url"],
-        "headers": {"Authorization": _authorization_value(token)},
-        "expires_at": token.expires_at,
-        "audience": token.audience,
         "session_key": principal.session_key,
         "subject": principal.subject,
     }
+    if token is not None:
+        payload["headers"] = {"Authorization": _authorization_value(token)}
+        payload["expires_at"] = token.expires_at
+        payload["audience"] = token.audience
+        reason = "bearer"
+    else:
+        # No companion JWT: kiro-cli presents the URL, Gateway returns 401
+        # + WWW-Authenticate, and Crew already surfaces Authorize.
+        payload["oauth_challenge"] = True
+        reason = REASON_OAUTH_CHALLENGE
     path = inbound_sidecar_path(principal.session_key)
     _write_owner_only_json(path, payload)
     sel().log_api_access(
@@ -544,7 +560,9 @@ async def attach_gateway_inbound(principal: SessionPrincipal) -> Path | None:
         operation="agentcore.gateway_inbound",
         outcome="ok",
         source="agentcore_gateway",
-        resources=f"session={principal.session_key} subject={principal.subject}",
+        resources=(
+            f"session={principal.session_key} subject={principal.subject} " f"reason={reason}"
+        ),
     )
     logger.debug("agentcore inbound sidecar written for session %s", principal.session_key)
     return path

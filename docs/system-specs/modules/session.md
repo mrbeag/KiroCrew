@@ -332,18 +332,21 @@ and a core-derived `raw_id`, the same function binds the principal:
 3. `SessionManager.set_principal` stores the result on the live
    `_Session`. The field survives `adopt_provider` (it names the
    caller, not the transcript).
-4. `attach_gateway_inbound` vends a login-posture inbound token onto a
-   `0600` sidecar under `<data home>/agentcore-inbound/` (filename is a
-   digest of `session_key`). Workload posture clears any leftover
-   sidecar — IAM inbound, no JWT — except an unattended `cron:` /
+4. `attach_gateway_inbound` writes a login-posture `0600` sidecar under
+   `<data home>/agentcore-inbound/` (filename is a digest of
+   `session_key`). A vend'd JWT becomes the `Authorization` header;
+   without one the sidecar is URL-only (`oauth_challenge`) so kiro-cli
+   can start its MCP OAuth challenge. Workload posture clears any leftover
+   sidecar — IAM inbound, no JWT; the rebuilt agent-file URL is the
+   localhost SigV4 proxy when the AWS extra is on — except an unattended `cron:` /
    `taskrunner:` session whose companion `status()` reports a user/OBO
    credential without a vaulted owner token: that writes a deny sidecar
    so `session/new` injects `{disabled: true}` and retracts the
    agent-file Gateway. A bind/attach exception on those unattended keys
    writes the same deny sidecar (`reason=attach_failed`) rather than
    leaving the agent-file Gateway reachable. Login posture never
-   attaches for those unattended keys. A miss or expiry leaves Gateway
-   absent for that session. A human dashboard turn does not fail solely
+   attaches for those unattended keys. A missing Gateway URL or an
+   expired bearer sidecar leaves Gateway absent for that session. A human dashboard turn does not fail solely
    because attach raised. An
    expired sidecar also recycles the live ACP child via
    `SessionManager.remove` (map preserved) before a new sidecar is

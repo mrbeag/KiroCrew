@@ -101,12 +101,42 @@ def test_gateway_mcp_spec_requires_https(monkeypatch) -> None:
 
     provider = aws_mod.AwsAgentIdentityProvider()
     monkeypatch.delenv(aws_mod.ENV_GATEWAY_URL, raising=False)
+    monkeypatch.delenv(aws_mod.ENV_POSTURE, raising=False)
     monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
     assert provider.gateway_mcp_spec() is None
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "http://insecure.example/mcp")
     assert provider.gateway_mcp_spec() is None
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
     assert provider.gateway_mcp_spec() == {"url": "https://gw.example.test/mcp"}
+
+
+def test_gateway_mcp_spec_workload_uses_sigv4_proxy(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import agentcore_sigv4 as sigv4
+
+    provider = aws_mod.AwsAgentIdentityProvider()
+    monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
+    monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
+    monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    monkeypatch.setattr(
+        sigv4,
+        "ensure_workload_proxy",
+        lambda url: "http://127.0.0.1:9/mcp" if url.startswith("https://") else None,
+    )
+    assert provider.gateway_mcp_spec() == {"url": "http://127.0.0.1:9/mcp"}
+
+
+def test_gateway_mcp_spec_workload_fails_closed_without_proxy(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import agentcore_sigv4 as sigv4
+
+    provider = aws_mod.AwsAgentIdentityProvider()
+    monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
+    monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
+    monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    monkeypatch.setattr(sigv4, "ensure_workload_proxy", lambda _url: None)
+    assert provider.gateway_mcp_spec() is None
 
 
 def test_resolved_gateway_url_prefers_policy_over_env(monkeypatch) -> None:
