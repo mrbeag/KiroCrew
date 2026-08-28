@@ -935,6 +935,20 @@ def _steps_from_script(script):
     return [s["label"] for s in _json.loads(_json.loads(m.group(1)))]
 
 
+def _sync_steps_from_script(script):
+    """Same extraction as :func:`_steps_from_script`, but the whole step dicts.
+
+    The metadata the runner acts on (``stash``) lives beside the
+    label, and asserting on it through the label-only view is impossible.
+    """
+    import json as _json
+    import re
+
+    m = re.search(r"steps = json\.loads\((.*?)\)\n", script, re.S)
+    assert m, "steps assignment not found — the script shape changed"
+    return _json.loads(_json.loads(m.group(1)))
+
+
 #: The main checkout the sync tests run against. Pinned rather than ambient so the
 #: sync's refusal path (no checkout discovered) cannot decide their outcome.
 _SYNC_REPO = "/fake/main-checkout"
@@ -5408,9 +5422,14 @@ async def test_sync_build_steps_never_see_credential_helpers(monkeypatch):
         # The build+stage step is a build step too and must not be exempt from
         # the credential-absence invariant just because it runs via `python -c`.
         or any("build_and_stage" in str(x) for x in a)
+        # Neither is the preflight: it runs npm against the incoming lockfile,
+        # so it is squarely in the worktree-controlled tier. With the operator
+        # repair seam removed, NOTHING on the sync path carries credentials
+        # except the fetch step.
+        or any("npm_preflight" in str(x) for x in a)
     ]
     assert fetch_envs and all(key in e for e in fetch_envs)
-    assert len(build_envs) == 4  # merge + pip + npm ci + (npm build + stage)
+    assert len(build_envs) == 5  # merge + preflight + pip + npm ci + (build + stage)
     assert all(key not in e for e in build_envs)
 
 
@@ -9206,3 +9225,194 @@ async def test_make_live_artifact_checks_are_executor_offloaded(
         f"all submitted callables: {submitted_qualnames!r}.  "
         "Zero entries means the checks are still inline on the event loop."
     )
+
+
+# --- Pull+Build: preflight, node_modules transaction, operator repair seam ---
+#
+# `npm ci` deletes node_modules before installing, so a registry that refuses one
+# package used to turn a sync into damage: the tree was emptied, the run aborted
+# mid-reify, and the checkout was left with new source, a new lockfile and no
+# frontend dependencies. These pin the three properties that make that failure a
+# no-op instead.
+
+
+@pytest.mark.asyncio
+async def test_sync_preflights_between_fetch_and_merge(monkeypatch):
+    """The probe must sit AFTER fetch and BEFORE merge.
+
+    That position is the whole mechanism, not a detail: the incoming lockfile is
+    only knowable once fetch has landed, and fetch moves nothing but remote refs
+    — so it is the one moment where a refusal costs nothing. After the merge the
+    refusal would already be too late; before the fetch there is nothing to read.
+    """
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: False)
+    _, script = await _run_sync(mod, [])
+    labels = _steps_from_script(script)
+
+    assert "Preflight" in labels, labels
+    # Labels for fetch and merge are BOTH "Pull", so identify them positionally:
+    # fetch is the first, merge the last one before the install step.
+    assert labels[0] == "Pull", labels
+    assert labels.index("Preflight") == 1, labels
+    assert labels[2] == "Pull", labels
+    assert labels.index("pip install") > labels.index("Preflight"), labels
+
+
+@pytest.mark.asyncio
+async def test_sync_preflight_probes_the_incoming_ref_not_the_working_tree(monkeypatch):
+    """It must read the lockfile from the FETCHED ref.
+
+    Reading the working tree would answer the question about the revision we
+    already have, which is never the one that is about to be installed — and it
+    could only be done after the merge, i.e. after the point where refusing is
+    still free.
+    """
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: False)
+    argvs = await _sync_step_argvs(monkeypatch)
+    probe = [a for a in argvs if any("npm_preflight" in str(x) for x in a)]
+    assert probe, f"no preflight step in {argvs}"
+    argv = probe[0]
+    assert argv[0] == sys.executable, argv
+    assert "--ref" in argv
+    ref = argv[argv.index("--ref") + 1]
+    # A remote-tracking ref, not a path: reading the working tree would answer
+    # the question about the revision we already have. The remote NAME is
+    # whatever this checkout calls its upstream, so only the shape is pinned.
+    assert ref.endswith(f"/{mod.BASE_BRANCH}"), ref
+    assert not ref.startswith("/") and not ref.startswith("."), ref
+
+
+@pytest.mark.asyncio
+async def test_sync_skips_the_preflight_on_an_edition_checkout(monkeypatch):
+    """No frontend half means nothing to preflight.
+
+    The edition path deliberately runs no npm at all, so a probe there would be
+    a network round trip that can only produce a false refusal.
+    """
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: True)
+    _, script = await _run_sync(mod, [])
+    assert "Preflight" not in _steps_from_script(script)
+
+
+@pytest.mark.asyncio
+async def test_npm_ci_step_carries_a_node_modules_stash(monkeypatch):
+    """The transaction is attached to the npm ci step, and ONLY to it.
+
+    It cannot be a later "restore" step: the runner is fail-fast, so anything
+    after a failed step never runs — which is exactly the case that needs the
+    restore.
+    """
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: False)
+    _, script = await _run_sync(mod, [])
+    steps = _sync_steps_from_script(script)
+    stashed = {s["label"]: s["stash"] for s in steps if s.get("stash")}
+    assert list(stashed) == ["npm ci"], stashed
+    assert stashed["npm ci"] == str(Path(_SYNC_REPO) / "website" / "node_modules")
+    # The runner must actually put it back, and only on a non-zero outcome.
+    assert "os.rename(backup, stash)" in script
+    # Deletions whose outcome decides the next rename are CONFIRMED, not
+    # fire-and-forget: a silently partial removal leaves a directory in place,
+    # makes the rename fail, and ends with a partial tree restored over a good
+    # one.
+    assert "def gone(p):" in script
+    assert "return not os.path.exists(p)" in script
+    assert "elif gone(stash):" in script
+
+
+@pytest.mark.asyncio
+async def test_a_reported_cause_is_redacted_before_it_is_stored(monkeypatch):
+    """The cause marker is readable from ANY step's stdout, including
+    worktree-controlled build output, so the value is untrusted.
+
+    Output lines are redacted on their way out by the run endpoint; this field
+    rides out beside them, so without redaction at the store it would be the
+    one unfiltered path to the dashboard.
+    """
+    seen: list[str] = []
+
+    def fake_redact(text):
+        seen.append(text)
+        return "REDACTED"
+
+    monkeypatch.setattr(mod, "_redact", fake_redact)
+    rid = "cause-redact-test"
+    mod._RUNS[rid] = {"status": "running", "exit_code": None, "label": "sync",
+                      "output": [], "started": 0.0}
+    try:
+        line = mod._CAUSE_MARKER + "a credential-bearing sentence"
+        # Mirror what the run worker does with a ::cause:: line.
+        mod._RUNS[rid]["cause"] = mod._redact(line[len(mod._CAUSE_MARKER):])[:400]
+        assert seen == ["a credential-bearing sentence"]
+        assert mod._RUNS[rid]["cause"] == "REDACTED"
+    finally:
+        mod._RUNS.pop(rid, None)
+
+    # And the real code path must go through _redact, not store the raw text.
+    import inspect
+    body = inspect.getsource(mod._start_run)
+    assert '_RUNS[rid]["cause"] = _redact(' in body, \
+        "the cause must be redacted at the store, not left to the API boundary"
+
+
+@pytest.mark.asyncio
+async def test_sync_never_runs_an_operator_supplied_command(monkeypatch):
+    """No configurable command executes on the sync path. This is a RATCHET.
+
+    An operator-declared "repair the registry credential" hook was written, then
+    removed: its whole purpose is to run a program that touches the operator's
+    credential material, and the operator declares the command while an agent
+    can rewrite the FILE it names -- or a script among its arguments. Withholding
+    git's credential helpers did not close it either, because HOME is itself the
+    channel those credentials arrive through. No validation of argv[0] can make
+    "the operator chose this command" mean "this is the code that will run", so
+    the seam does not belong on a path that runs unattended.
+
+    Restoring it needs its own change with its own threat model, not a revert.
+    """
+    monkeypatch.setenv("KIROCREW_DEVFLEET_NPM_AUTH_REPAIR", "/bin/sh -c true")
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: False)
+    _, script = await _run_sync(mod, [])
+
+    steps = _sync_steps_from_script(script)
+    assert not any("repair" in s for s in steps), steps
+    assert not hasattr(mod, "_npm_auth_repair_argv")
+    for token in ("KIROCREW_DEVFLEET_NPM_AUTH_REPAIR", "npm_auth_repair"):
+        assert token not in script
+    # The declared command must appear NOWHERE in the generated script. Asserted
+    # this way rather than against a list of expected argv[0]s: the toolchain
+    # binaries are resolved from the host (npm is /usr/bin/npm on one platform
+    # and /opt/homebrew/bin/npm on another), so a path allowlist tests the host
+    # rather than the property.
+    assert "/bin/sh" not in script
+    for s in steps:
+        assert "/bin/sh" not in " ".join(map(str, s["argv"])), s["argv"]
+
+
+@pytest.mark.asyncio
+async def test_runner_refuses_when_a_tree_and_a_backup_both_exist(monkeypatch):
+    """Both paths present is AMBIGUOUS, so the runner touches neither.
+
+    Killed during npm ci leaves a partial tree plus the good backup; killed
+    during the success cleanup leaves the good NEW tree plus a half-deleted
+    backup. Nothing on disk distinguishes them, so either rule destroys the good
+    copy in one case. Stopping is the only branch that cannot lose data, and it
+    names both paths so the operator can look.
+    """
+    monkeypatch.setattr(mod.frontend, "edition_configured", lambda: False)
+    _, script = await _run_sync(mod, [])
+
+    assert "cannot be told from disk" in script
+    # It must also say what to do next: otherwise every later Pull+Build press
+    # refuses identically and the operator has to deduce that a directory needs
+    # removing.
+    assert "press Pull + build again" in script
+    assert "print('tree: %s' % stash, flush=True)" in script
+    assert "print('backup: %s' % backup, flush=True)" in script
+    # The check runs BEFORE the step loop, so the refusal lands with nothing
+    # applied -- checking it inside `npm ci` would first let fetch, merge and pip
+    # land, telling the operator to go clean a directory while they hold a
+    # half-applied update.
+    refuse = script.index("cannot be told from disk")
+    assert refuse < script.index("for i, st in enumerate(steps):")
+    # Adoption remains, but only for the unambiguous single-copy case.
+    assert "adopting a backup left by an interrupted run" in script

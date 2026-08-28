@@ -59,6 +59,14 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 // stalls in one band, then jumps. An indeterminate spinner plus the step name
 // and elapsed time is the honest signal.
 const STEP_MARKER_RE = /^::step::(\d+)::(.+)$/
+// The backend also emits `::cause::<reason>` lines, which are lifted onto the
+// run's `cause` field and shown as the failure summary. The marker must never
+// win the fallback "last output line" search -- it would render with its raw
+// prefix -- but the line itself STAYS in the log panel. The summary row is
+// `nowrap` + ellipsis, so a cause long enough to carry a remedy is truncated
+// there and reachable only through the `title` tooltip, which keyboard and
+// touch users cannot open. The log is where the full text has to remain.
+const CAUSE_MARKER_RE = /^::cause::/
 
 function filterStepMarkers(lines: string[]): string[] {
   return lines.filter((l) => !STEP_MARKER_RE.test(l))
@@ -845,12 +853,18 @@ export default function DevFleetPage() {
     if (syncRun?.rid === fleet.sync_run_id) return // already tracking this run
     syncAttachedRef.current = true
     const rid = fleet.sync_run_id
-    api.get<{ status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string }>('/run?id=' + rid)
+    api.get<{ status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string; cause?: string }>('/run?id=' + rid)
       .then((run) => {
         if (!run) return
         const t0 = run.started ? run.started * 1000 : Date.now()
         const out = run.output || []
-        const last = [...out].reverse().find((l) => l?.trim() && !STEP_MARKER_RE.test(l)) || ''
+        // Same preference as the two poll paths: a reported cause outranks the
+        // last output line, which for npm is its log-file pointer. Missing it
+        // here meant a page RELOAD after a failed build showed the uninformative
+        // line even though the diagnosis was stored on the run.
+        const last = run.cause
+          || [...out].reverse().find((l) => l?.trim() && !STEP_MARKER_RE.test(l) && !CAUSE_MARKER_RE.test(l))
+          || ''
         if (run.status === 'running') {
           setSyncRun({ rid, status: 'running', lines: out, startedAt: t0, stepLabel: run.step_label })
           pollSyncRun(rid, t0)
@@ -938,12 +952,14 @@ export default function DevFleetPage() {
       await sleep(2000)
       if (!pollAliveRef.current) return
       if (cancelledRunsRef.current.has(rid)) return
-      let run: { status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string } | null = null
+      let run: { status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string; cause?: string } | null = null
       try { run = await api.get('/run?id=' + rid) } catch { continue }
       if (!run) continue
       const t0 = run.started ? run.started * 1000 : startedAt
       const out = run.output || []
-      const last = [...out].reverse().find((l: string) => l?.trim() && !STEP_MARKER_RE.test(l)) || ''
+      const last = run.cause
+        || [...out].reverse().find((l: string) => l?.trim() && !STEP_MARKER_RE.test(l) && !CAUSE_MARKER_RE.test(l))
+        || ''
       if (run.status === 'done' || run.status === 'timeout') {
         const okRun = run.exit_code === 0
         setSyncRun({ rid, status: okRun ? 'done' : 'error', lines: out, startedAt: t0, exit: run.exit_code, last })
@@ -963,7 +979,7 @@ export default function DevFleetPage() {
       // keep polling and still issue the restart after unmount; the React state
       // setters below are safe no-ops once the component is gone.
       if (cancelledRunsRef.current.has(rid)) return
-      let run: { status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string } | null = null
+      let run: { status?: string; output?: string[]; exit_code?: number; started?: number; step_label?: string; cause?: string } | null = null
       let gone = false
       try { run = await api.get('/run?id=' + rid) } catch (e) {
         // 404 = the gateway restarted and dropped the run registry — the run
@@ -982,7 +998,13 @@ export default function DevFleetPage() {
       }
       const out = run.output || []
       const t0 = run.started ? run.started * 1000 : startedAt
-      const last = [...out].reverse().find((l) => l?.trim() && !STEP_MARKER_RE.test(l)) || ''
+      // Prefer the cause a step reported over the last output line. npm prints
+      // its diagnosis FIRST and its "a complete log of this run can be found
+      // in ..." pointer LAST, so the last line is the least informative one it
+      // produces — which is what this used to surface on every failed build.
+      const last = run.cause
+        || [...out].reverse().find((l) => l?.trim() && !STEP_MARKER_RE.test(l) && !CAUSE_MARKER_RE.test(l))
+        || ''
       if (run.status === 'done' || run.status === 'timeout') {
         const okRun = run.exit_code === 0
         setSyncRun({ rid, status: okRun ? 'done' : 'error', lines: out, startedAt: t0, exit: run.exit_code, last })
