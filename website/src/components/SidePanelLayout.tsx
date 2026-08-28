@@ -388,8 +388,13 @@ export default function SidePanelLayout({ title, tabs, defaultTab, rememberKey, 
     return (
       <div className={`flex-1 min-w-0 min-h-0 flex flex-col ${fixed ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {!subDrilled && <NavBackBar label={title} onBack={backToRoot} />}
+        {/* pt-3 matches the ROOT LIST's title row, so the large title sits the
+          * same distance below the chrome above it at both levels of the stack
+          * and does not visibly jump on drill-in. Without it the 2xl title
+          * rendered flush against NavBackBar's hairline — the desktop branch's
+          * own pt-2 has no counterpart here because the bar is mobile-only. */}
         {!subDrilled && (
-        <div data-testid="mobile-detail-header" className="flex items-end justify-between gap-4 px-4 pb-2 shrink-0">
+        <div data-testid="mobile-detail-header" className="flex items-end justify-between gap-4 px-4 pt-3 pb-2 shrink-0">
           <div>
             <div className="text-2xl font-bold tracking-tight text-text-strong">{meta?.label || ''}</div>
             {meta?.description && <div className="text-muted text-sm mt-1">{meta.description}</div>}

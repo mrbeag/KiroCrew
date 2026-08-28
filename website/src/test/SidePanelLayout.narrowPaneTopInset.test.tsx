@@ -84,6 +84,23 @@ describe('SidePanelLayout — the narrow pane clears the tab strip border', () =
     expect(header.className.split(/\s+/)).toContain('pb-2')
   })
 
+  it('clears the back bar above it, so the large title is not flush to the hairline', () => {
+    // The header's OWN top inset, a separate gap from the pane's: above it sits
+    // NavBackBar, which ends in a drawn hairline. With no pt the 2xl title
+    // rendered against that line — measured 0px from hairline to cap height on
+    // every Settings and Developer tab at 390px, against 12px with `pt-3`.
+    //
+    // pt-3, matching the ROOT LIST's own title row (`pt-3 pb-1`), so the large
+    // title sits the same distance below the chrome above it at both levels of
+    // the push stack and does not jump on drill-in. The desktop branch's pt-2
+    // is NOT the number to copy: nothing is above that header.
+    mobile.value = true
+    renderPage({ url: '/page?tab=form' })
+    const header = screen.getByTestId('mobile-detail-header')
+    expect(header.className.split(/\s+/).filter(c => /^(?:[a-z-]+:)?p[ty]-/.test(c)))
+      .toEqual(['pt-3'])
+  })
+
   it('leaves the desktop pane flush, since the header already spaces it', () => {
     renderPage()
     expect(topInsets(screen.getByTestId('side-panel-pane'))).toEqual([])
