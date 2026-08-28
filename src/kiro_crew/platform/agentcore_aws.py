@@ -62,6 +62,15 @@ WORKLOAD_NAME_MAX = 255
 _WORKLOAD_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 # boto3 client name (lazy). Not the ``bedrock-agentcore`` SDK package.
 _CLIENT = "bedrock-agentcore"
+# Catalog identity probe — vend-and-discard. Never a snapshot field.
+IDENTITY_PROBE_OK = "ok"
+IDENTITY_PROBE_SKIP_LOGIN = "login_needs_sign_in"
+IDENTITY_PROBE_NOT_NAMED = "not_named"
+IDENTITY_PROBE_SERVICE_LINKED = "service_linked"
+IDENTITY_PROBE_DENIED = "identity_denied"
+IDENTITY_PROBE_NOT_FOUND = "identity_not_found"
+IDENTITY_PROBE_ERROR = "identity_error"
+IDENTITY_PROBE_EXTRA = "extra_missing"
 _JWT_FALLBACK_TTL_SECS = 300.0
 _PIP_TIMEOUT_SECS = 180
 _CONFIGURED_POSTURES = frozenset({"workload", "login"})
@@ -204,11 +213,17 @@ def authored_workload_name() -> str:
 
 
 def resolved_posture() -> str:
-    """Env posture first (systemd / launch), else the standalone home file."""
+    """Policy posture first (Settings), else launch env.
+
+    URL and workload name already prefer the home file so leftover
+    systemd ``KIROCREW_AGENTCORE_POSTURE=workload`` cannot hide a
+    Settings ``login`` from catalog, probe, and ``gateway_mcp_spec``.
+    """
+    authored = authored_posture()
+    if authored:
+        return authored
     env = _env(ENV_POSTURE).lower()
-    if env in _CONFIGURED_POSTURES:
-        return env
-    return authored_posture() or ""
+    return env if env in _CONFIGURED_POSTURES else ""
 
 
 def resolved_gateway_url() -> str:
@@ -264,6 +279,49 @@ def resolved_workload_name() -> str:
     if _env(ENV_POSTURE).lower() in _CONFIGURED_POSTURES:
         return DEFAULT_WORKLOAD_NAME
     return ""
+
+
+def probe_workload_identity() -> dict[str, object]:
+    """Vend-and-discard a WAT so Settings can see a wrong identity name.
+
+    Never returns the token. Login posture skips: this page has no user
+    JWT and a login instance role only has ``GetWorkloadAccessTokenForJWT``.
+    """
+    name = resolved_workload_name()
+    if resolved_posture() == "login":
+        return {"ok": True, "detail": IDENTITY_PROBE_SKIP_LOGIN, "name": name}
+    if not name:
+        return {"ok": False, "detail": IDENTITY_PROBE_NOT_NAMED, "name": ""}
+    client = _client()
+    if client is None:
+        return {"ok": False, "detail": IDENTITY_PROBE_EXTRA, "name": name}
+    try:
+        resp = client.get_workload_access_token(workloadName=name)
+    except Exception as exc:
+        return {"ok": False, "detail": _classify_identity_error(exc), "name": name}
+    token = resp.get("workloadAccessToken") if isinstance(resp, dict) else None
+    if isinstance(token, str) and token:
+        return {"ok": True, "detail": IDENTITY_PROBE_OK, "name": name}
+    return {"ok": False, "detail": IDENTITY_PROBE_ERROR, "name": name}
+
+
+def _classify_identity_error(exc: BaseException) -> str:
+    """Map a WAT failure to a machine code. Never include the exception text."""
+    name = type(exc).__name__
+    code = ""
+    raw = getattr(exc, "response", None)
+    if isinstance(raw, dict):
+        err = raw.get("Error")
+        if isinstance(err, dict):
+            code = str(err.get("Code") or "")
+    blob = f"{name} {code} {exc}".lower()
+    if "linked to a service" in blob:
+        return IDENTITY_PROBE_SERVICE_LINKED
+    if "accessdenied" in blob or "unauthorized" in blob or "forbidden" in blob:
+        return IDENTITY_PROBE_DENIED
+    if "resourcenotfound" in blob or "notfound" in blob:
+        return IDENTITY_PROBE_NOT_FOUND
+    return IDENTITY_PROBE_ERROR
 
 
 def extra_snapshot(*, last_code: str | None = None) -> dict[str, object]:
@@ -360,7 +418,7 @@ class AwsAgentIdentityProvider:
         return WorkloadIdentity(name=name, arn=_workload_arn(name))
 
     def status(self) -> dict[str, object]:
-        posture = _env(ENV_POSTURE).lower() or (authored_posture() or "")
+        posture = resolved_posture()
         kind = "m2m" if posture == "workload" else "user"
         return {
             "credentialKind": kind,

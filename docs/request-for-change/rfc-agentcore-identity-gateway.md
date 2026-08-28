@@ -881,17 +881,29 @@ Closed after the run:
 - Login attach used `gateway_mcp_spec()`, which rewrites to the proxy
   when env posture is still `workload`. Login sidecars now always use
   the https Gateway URL.
+- Catalog/verify now probes `GetWorkloadAccessToken` and discards the
+  body. A standalone `kirocrew-e2e` is `ok`; the Gateway-linked name
+  `kirocrew-e2e-n9pk1rdrea` is `service_linked`; the default
+  `kirocrew` is `identity_denied`. Login skips the probe
+  (`login_needs_sign_in`). The token never enters the snapshot.
+- Login sidecar `Authorization` is RFC 6750 `Bearer` (live-checked).
+- `resolved_posture()` is policy-first like URL and name. Leftover
+  env `workload` no longer hides a Settings `login` from catalog
+  (authorizer mismatch against this AWS_IAM Gateway is now visible).
 
 Still open (not v1 blockers):
 
 - Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP
   (needs a public OIDC discovery URL). Unit path is covered
-  (oauth_challenge sidecar; companion JWT → bearer).
+  (oauth_challenge sidecar; companion JWT → `Bearer`).
 - MCP initialize on this Gateway does not return `mcp-session-id`;
   `tools/list` still works without one.
 - Creating a Gateway also creates a service-linked identity that
   refuses caller WAT. Crew must use a standalone workload identity.
+  Settings now names that failure `service_linked`.
 - Phase 5 `GetResourceOauth2Token` stays follow-on.
+- Lambda targets stay `not_syncable`. An MCP_SERVER target was not
+  added to the tagged stack.
 
 ## Alternatives considered
 

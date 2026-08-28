@@ -77,6 +77,11 @@ def _isolate(
             "items": [{"name": "search", "description": "find things"}],
         },
     )
+    monkeypatch.setattr(
+        inspect,
+        "_identity_check",
+        lambda: {"id": "identity", "ok": True, "detail": "ok"},
+    )
     return chosen
 
 
@@ -141,7 +146,23 @@ def test_snapshot_ok_lists_targets_and_tools(monkeypatch: pytest.MonkeyPatch) ->
     ids = {c["id"] for c in snap["checks"]}
     assert "authorizer" in ids
     assert "tools" in ids
+    assert "identity" in ids
     assert all(c["ok"] for c in snap["checks"] if c["id"] != "invoke_scope")
+
+
+def test_identity_check_surfaces_service_linked(monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate(monkeypatch)
+    monkeypatch.setattr(
+        inspect,
+        "_identity_check",
+        lambda: {"id": "identity", "ok": False, "detail": "service_linked"},
+    )
+    snap = inspect.inspect_snapshot()
+    identity = next(c for c in snap["checks"] if c["id"] == "identity")
+    assert identity["ok"] is False
+    assert identity["detail"] == "service_linked"
+    dumped = json.dumps(snap)
+    assert "workloadAccessToken" not in dumped
 
 
 def test_authorizer_mismatch_on_login_gateway(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,8 +5,9 @@ ListGatewayTargets, GetGatewayTarget, SynchronizeGatewayTargets.
 
 Data plane: MCP ``tools/list`` signed with the existing SigV4 helper
 on workload + IAM inbound. Login without a user JWT skips tools with a
-hint — this page cannot borrow a chat session. A WAT is never a Gateway
-bearer and never appears in the snapshot.
+hint — this page cannot borrow a chat session. Workload catalog also
+vends-and-discards a WAT so a wrong identity name is visible; the
+token never appears in the snapshot and is never a Gateway bearer.
 
 ``ListOauth2CredentialProviders`` is account-wide Identity directory
 and is not on this surface.
@@ -23,8 +24,10 @@ from urllib.parse import urlparse
 
 from kiro_crew.platform.agentcore_aws import (
     extra_available,
+    probe_workload_identity,
     resolved_gateway_url,
     resolved_posture,
+    resolved_workload_name,
 )
 from kiro_crew.platform.agentcore_sigv4 import sign_aws_request
 
@@ -112,24 +115,37 @@ def inspect_snapshot(*, include_tools: bool = True) -> dict[str, Any]:
     """Live catalog + checks. Never raises; codes are the operator contract."""
     url = resolved_gateway_url()
     posture = resolved_posture()
+    workload_name = resolved_workload_name()
     if not url:
-        return _empty_snapshot(SNAPSHOT_NO_URL, posture=posture)
+        return _empty_snapshot(SNAPSHOT_NO_URL, posture=posture, workload_name=workload_name)
     if not extra_available():
-        return _empty_snapshot(SNAPSHOT_EXTRA_MISSING, posture=posture, url=url)
+        return _empty_snapshot(
+            SNAPSHOT_EXTRA_MISSING, posture=posture, url=url, workload_name=workload_name
+        )
     ref = parse_gateway_ref(url)
     if ref is None:
-        return _empty_snapshot(SNAPSHOT_UNUSABLE_URL, posture=posture, url=url)
+        return _empty_snapshot(
+            SNAPSHOT_UNUSABLE_URL, posture=posture, url=url, workload_name=workload_name
+        )
 
     client = _control_client(ref["region"])
     if client is None:
-        return _empty_snapshot(SNAPSHOT_EXTRA_MISSING, posture=posture, url=url)
+        return _empty_snapshot(
+            SNAPSHOT_EXTRA_MISSING, posture=posture, url=url, workload_name=workload_name
+        )
 
     try:
         raw_gateway = client.get_gateway(gatewayIdentifier=ref["id"])
     except Exception as exc:
         code = _classify_aws_error(exc)
         logger.warning("GetGateway failed (%s)", code, exc_info=True)
-        return _empty_snapshot(code, posture=posture, url=url, gateway_id=ref["id"])
+        return _empty_snapshot(
+            code,
+            posture=posture,
+            url=url,
+            gateway_id=ref["id"],
+            workload_name=workload_name,
+        )
 
     gateway = _gateway_view(raw_gateway, ref)
     targets, targets_error = _list_targets(client, ref["id"])
@@ -149,10 +165,12 @@ def inspect_snapshot(*, include_tools: bool = True) -> dict[str, Any]:
             authorizer=str(gateway.get("authorizer_type") or ""),
         )
         checks.append(_tools_check(tools))
+    checks.append(_identity_check())
     return _scrub(
         {
             "code": SNAPSHOT_OK,
             "posture": posture or None,
+            "workload_name": workload_name,
             "gateway_url": url,
             "gateway": gateway,
             "targets": targets,
@@ -199,6 +217,7 @@ def _empty_snapshot(
     posture: str = "",
     url: str = "",
     gateway_id: str = "",
+    workload_name: str = "",
 ) -> dict[str, Any]:
     checks = [
         {"id": "url", "ok": bool(url), "detail": code if not url else "ok"},
@@ -209,6 +228,7 @@ def _empty_snapshot(
         {"id": "url_match", "ok": False, "detail": code},
         {"id": "invoke_scope", "ok": False, "detail": code},
         {"id": "tools", "ok": False, "detail": code},
+        {"id": "identity", "ok": False, "detail": code},
     ]
     gateway: dict[str, Any] | None = None
     if gateway_id:
@@ -224,6 +244,7 @@ def _empty_snapshot(
         {
             "code": code,
             "posture": posture or None,
+            "workload_name": workload_name,
             "gateway_url": url,
             "gateway": gateway,
             "targets": [],
@@ -528,6 +549,16 @@ def _tools_check(tools: dict[str, Any]) -> dict[str, Any]:
         "id": "tools",
         "ok": bool(tools.get("reachable")),
         "detail": tools.get("skip_reason") or "ok",
+    }
+
+
+def _identity_check() -> dict[str, Any]:
+    """Workload WAT probe. Login skips. Token never enters the snapshot."""
+    probed = probe_workload_identity()
+    return {
+        "id": "identity",
+        "ok": bool(probed.get("ok")),
+        "detail": str(probed.get("detail") or ""),
     }
 
 

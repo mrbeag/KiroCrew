@@ -142,6 +142,7 @@ def test_gateway_mcp_spec_workload_uses_sigv4_proxy(monkeypatch) -> None:
     monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
     monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
     monkeypatch.setattr(
         sigv4,
         "ensure_workload_proxy",
@@ -158,6 +159,7 @@ def test_gateway_mcp_spec_workload_fails_closed_without_proxy(monkeypatch) -> No
     monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
     monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
     monkeypatch.setattr(sigv4, "ensure_workload_proxy", lambda _url: None)
     assert provider.gateway_mcp_spec() is None
 
@@ -170,6 +172,16 @@ def test_resolved_gateway_url_prefers_policy_over_env(monkeypatch) -> None:
     assert aws_mod.resolved_gateway_url() == "https://policy.example.test/mcp"
     monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
     assert aws_mod.resolved_gateway_url() == "https://env.example.test/mcp"
+
+
+def test_resolved_posture_prefers_policy_over_env(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: "login")
+    assert aws_mod.resolved_posture() == "login"
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
+    assert aws_mod.resolved_posture() == "workload"
 
 
 def test_vend_workload_access_token_uses_standalone_api(monkeypatch) -> None:
@@ -414,3 +426,58 @@ def test_normalize_agentcore_gateway_url() -> None:
         raise AssertionError("over-long URL must be refused")
     except ValueError:
         pass
+
+
+def test_probe_workload_identity_discards_token(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    class _Client:
+        def get_workload_access_token(self, **kwargs):
+            assert kwargs["workloadName"] == "kirocrew-e2e"
+            return {"workloadAccessToken": "must-not-leak"}
+
+    monkeypatch.setattr(aws_mod, "resolved_posture", lambda: "workload")
+    monkeypatch.setattr(aws_mod, "resolved_workload_name", lambda: "kirocrew-e2e")
+    monkeypatch.setattr(aws_mod, "_client", lambda: _Client())
+    probed = aws_mod.probe_workload_identity()
+    assert probed == {"ok": True, "detail": "ok", "name": "kirocrew-e2e"}
+    assert "must-not-leak" not in json.dumps(probed)
+
+
+def test_probe_workload_identity_service_linked(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    class Linked(Exception):
+        response = {"Error": {"Code": "AccessDeniedException"}}
+
+        def __str__(self) -> str:
+            return "WorkloadIdentity is linked to a service"
+
+    class _Client:
+        def get_workload_access_token(self, **kwargs):
+            raise Linked()
+
+    monkeypatch.setattr(aws_mod, "resolved_posture", lambda: "workload")
+    monkeypatch.setattr(aws_mod, "resolved_workload_name", lambda: "kirocrew-e2e-n9pk1rdrea")
+    monkeypatch.setattr(aws_mod, "_client", lambda: _Client())
+    probed = aws_mod.probe_workload_identity()
+    assert probed["ok"] is False
+    assert probed["detail"] == aws_mod.IDENTITY_PROBE_SERVICE_LINKED
+
+
+def test_probe_workload_identity_skips_login(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setattr(aws_mod, "resolved_posture", lambda: "login")
+    monkeypatch.setattr(aws_mod, "resolved_workload_name", lambda: "kirocrew-e2e")
+    monkeypatch.setattr(
+        aws_mod,
+        "_client",
+        lambda: (_ for _ in ()).throw(AssertionError("login must not vend a WAT")),
+    )
+    probed = aws_mod.probe_workload_identity()
+    assert probed == {
+        "ok": True,
+        "detail": aws_mod.IDENTITY_PROBE_SKIP_LOGIN,
+        "name": "kirocrew-e2e",
+    }

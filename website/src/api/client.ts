@@ -387,6 +387,7 @@ export interface AgentcoreGatewayTools {
 export interface AgentcoreGatewayData {
   code: string
   posture: 'workload' | 'login' | null
+  workload_name?: string
   gateway_url: string
   gateway: {
     id: string

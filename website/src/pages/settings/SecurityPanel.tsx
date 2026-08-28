@@ -2006,6 +2006,7 @@ const CATALOG_CHECK_LABEL: Record<string, string> = {
   url_match: 'pages.settings.securityPanel.agent_identity_check_url_match',
   invoke_scope: 'pages.settings.securityPanel.agent_identity_check_invoke_scope',
   tools: 'pages.settings.securityPanel.agent_identity_check_tools',
+  identity: 'pages.settings.securityPanel.agent_identity_check_identity',
 }
 
 const CATALOG_CODE_HINT: Record<string, string> = {
@@ -2015,6 +2016,11 @@ const CATALOG_CODE_HINT: Record<string, string> = {
   aws_denied: 'pages.settings.securityPanel.agent_identity_code_aws_denied',
   not_found: 'pages.settings.securityPanel.agent_identity_code_not_found',
   aws_error: 'pages.settings.securityPanel.agent_identity_code_aws_error',
+  service_linked: 'pages.settings.securityPanel.agent_identity_code_service_linked',
+  not_named: 'pages.settings.securityPanel.agent_identity_code_not_named',
+  identity_denied: 'pages.settings.securityPanel.agent_identity_code_identity_denied',
+  identity_not_found: 'pages.settings.securityPanel.agent_identity_code_identity_not_found',
+  identity_error: 'pages.settings.securityPanel.agent_identity_code_identity_error',
 }
 
 const TARGET_TYPE_LABEL: Record<string, string> = {
@@ -2036,6 +2042,13 @@ function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
   if (data.code !== 'ok' && CATALOG_CODE_HINT[data.code]) {
     return i18nT(CATALOG_CODE_HINT[data.code])
   }
+  const identity = data.checks.find(c => c.id === 'identity')
+  if (identity && !identity.ok) {
+    if (CATALOG_CODE_HINT[identity.detail]) {
+      return i18nT(CATALOG_CODE_HINT[identity.detail])
+    }
+    return i18nT('pages.settings.securityPanel.agent_identity_mismatch_identity')
+  }
   const authorizer = data.checks.find(c => c.id === 'authorizer')
   if (authorizer && !authorizer.ok) {
     return i18nT('pages.settings.securityPanel.agent_identity_mismatch_authorizer')
@@ -2044,6 +2057,11 @@ function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
     return i18nT('pages.settings.securityPanel.agent_identity_tools_skipped_login')
   }
   return null
+}
+
+function checkDetailLabel(detail: string): string {
+  const key = CATALOG_CODE_HINT[detail]
+  return key ? i18nT(key) : detail
 }
 
 function CheckRow({ check }: { check: AgentcoreGatewayCheck }) {
@@ -2058,7 +2076,7 @@ function CheckRow({ check }: { check: AgentcoreGatewayCheck }) {
       <span className="text-text">
         {labelKey ? i18nT(labelKey) : check.id}
         {!check.ok && check.detail && check.detail !== 'ok' ? (
-          <span className="text-muted"> · {check.detail}</span>
+          <span className="text-muted"> · {checkDetailLabel(check.detail)}</span>
         ) : null}
       </span>
     </li>
@@ -2167,6 +2185,7 @@ function GatewayCatalogCard() {
         {
           code: data.code,
           posture: data.posture,
+          workload_name: data.workload_name,
           gateway: data.gateway,
           checks: data.checks,
           targets: data.targets.map(t => ({

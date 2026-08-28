@@ -437,20 +437,28 @@ delegates to that same global. Wired sites:
   error on those unattended keys writes the same deny sidecar. 3LO
   consent is `allow_agentcore_consent_url` + owner-only GET
   `/api/agentcore/consent` (SEL `agentcore.consent_url` /
-  `agentcore.unattended_denied`). Settings catalog / verify / sync is
+  `agentcore.unattended_denied`).   Settings catalog / verify / sync is
   owner-only `GET`/`POST /api/agentcore/gateway` against
   `platform/agentcore_inspect.py` (control-plane
   `bedrock-agentcore-control`; data-plane MCP `tools/list` via SigV4
-  on workload+IAM; login skips tools with a sign-in hint). Target type
+  on workload+IAM; login skips tools with a sign-in hint). Workload
+  catalog also probes `GetWorkloadAccessToken` and discards the body
+  so a wrong or Gateway-linked identity name shows as the `identity`
+  check (`service_linked` / `identity_denied` / `not_named`); login
+  skips that probe. Target type
   is inferred from `targetConfiguration` (`mcp.lambda` → `LAMBDA`,
   `mcp.mcpServer` → `MCP_SERVER`) because List/Get often omit
   `targetType`; Sync is offered only for DEFAULT MCP servers — a
   Lambda target returns `not_syncable`. Settings authors
   `capabilities.agentcore.workload_name` (policy-first, then env, then
   the RFC default `kirocrew`) so a named identity is not stuck on
-  leftover systemd `KIROCREW_AGENTCORE_WORKLOAD_NAME`. Login attach
+  leftover systemd `KIROCREW_AGENTCORE_WORKLOAD_NAME`. `resolved_posture()`
+  is policy-first the same way, so leftover `KIROCREW_AGENTCORE_POSTURE`
+  cannot hide a Settings `login`. Login attach
   writes the https Gateway URL, never the workload SigV4 proxy, even
-  when env posture is still `workload`. Default adapter stays empty. The
+  when env posture is still `workload`. The sidecar
+  `Authorization` value is RFC 6750 `Bearer` (the `InboundToken.scheme`
+  field stays `bearer`). Default adapter stays empty. The
   public `probe_instance_invoke_gateway()` is a no-op False; a companion
   must override it — False is "no mismatch detected", not "IAM inbound
   is impossible."

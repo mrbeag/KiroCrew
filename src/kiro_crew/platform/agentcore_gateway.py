@@ -441,7 +441,10 @@ def session_gateway_servers(session_key: str) -> list[dict[str, Any]]:
 
 
 def _authorization_value(token: InboundToken) -> str:
+    """RFC 6750 ``Authorization: Bearer <token>``. Scheme field stays lowercase."""
     scheme = (token.scheme or "bearer").strip() or "bearer"
+    if scheme.lower() == "bearer":
+        scheme = "Bearer"
     return f"{scheme} {token.token}".strip()
 
 

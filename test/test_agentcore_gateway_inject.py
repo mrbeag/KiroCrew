@@ -318,11 +318,11 @@ def test_login_vend_writes_sidecar_not_agent_file(
     assert path == inbound_sidecar_path("dashboard:1")
     assert path is not None and path.exists()
     sidecar = json.loads(path.read_text(encoding="utf-8"))
-    assert sidecar["headers"]["Authorization"] == f"bearer {_TOKEN}"
+    assert sidecar["headers"]["Authorization"] == f"Bearer {_TOKEN}"
     assert sidecar["url"] == _GATEWAY_URL
     injected = session_gateway_servers("dashboard:1")
     assert injected[0]["url"] == _GATEWAY_URL
-    assert injected[0]["headers"][0]["value"] == f"bearer {_TOKEN}"
+    assert injected[0]["headers"][0]["value"] == f"Bearer {_TOKEN}"
     assert _TOKEN not in (kiro_dir / "kirocrew.json").read_text(encoding="utf-8")
 
 
@@ -351,8 +351,8 @@ def test_two_sessions_do_not_share_a_sidecar() -> None:
     assert path_a.exists() and path_b.exists()
     servers_a = session_gateway_servers("dashboard:a")
     servers_b = session_gateway_servers("dashboard:b")
-    assert servers_a[0]["headers"][0]["value"] == "bearer tok-a"
-    assert servers_b[0]["headers"][0]["value"] == "bearer tok-b"
+    assert servers_a[0]["headers"][0]["value"] == "Bearer tok-a"
+    assert servers_b[0]["headers"][0]["value"] == "Bearer tok-b"
 
 
 def test_token_never_appears_in_logs_or_sel(caplog: pytest.LogCaptureFixture) -> None:
@@ -522,10 +522,10 @@ async def test_bind_recycles_then_writes_fresh_sidecar() -> None:
     path = inbound_sidecar_path("dashboard:rebind")
     assert path.exists()
     sidecar = json.loads(path.read_text(encoding="utf-8"))
-    assert sidecar["headers"]["Authorization"] == f"bearer {_TOKEN}"
+    assert sidecar["headers"]["Authorization"] == f"Bearer {_TOKEN}"
     assert sidecar["expires_at"] == 4_000_000_000.0
     injected = session_gateway_servers("dashboard:rebind")
-    assert injected[0]["headers"][0]["value"] == f"bearer {_TOKEN}"
+    assert injected[0]["headers"][0]["value"] == f"Bearer {_TOKEN}"
 
 
 def test_expired_drain_sel_has_no_token(caplog: pytest.LogCaptureFixture) -> None:

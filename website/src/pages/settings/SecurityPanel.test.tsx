@@ -2057,4 +2057,35 @@ describe('SecurityPanel — agent identity', () => {
     fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_verify') }))
     await waitFor(() => expect(api.verifyAgentcoreGateway).toHaveBeenCalled())
   })
+
+  it('explains when the workload identity name cannot vend a token', async () => {
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      extra_installed: true,
+      extra_code: 'ok',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      workload_name: 'kirocrew-e2e-n9pk1rdrea',
+    })
+    const catalog = {
+      ...CATALOG_IDLE,
+      code: 'ok',
+      posture: 'workload' as const,
+      workload_name: 'kirocrew-e2e-n9pk1rdrea',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      checks: [{ id: 'identity', ok: false, detail: 'service_linked' }],
+    }
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(catalog)
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+    expect(
+      await screen.findAllByText(i18nT('pages.settings.securityPanel.agent_identity_code_service_linked')),
+    ).not.toHaveLength(0)
+    expect(
+      screen.getByText(i18nT('pages.settings.securityPanel.agent_identity_check_identity'), {
+        exact: false,
+      }),
+    ).toBeInTheDocument()
+  })
 })
