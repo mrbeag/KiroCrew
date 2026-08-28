@@ -2022,6 +2022,7 @@ const CATALOG_CODE_HINT: Record<string, string> = {
   identity_not_found: 'pages.settings.securityPanel.agent_identity_code_identity_not_found',
   identity_error: 'pages.settings.securityPanel.agent_identity_code_identity_error',
   not_kirocrew_prefixed: 'pages.settings.securityPanel.agent_identity_code_not_kirocrew',
+  proxy_unavailable: 'pages.settings.securityPanel.agent_identity_code_proxy_unavailable',
 }
 
 const TARGET_TYPE_LABEL: Record<string, string> = {
@@ -2060,6 +2061,9 @@ function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
   }
   if (data.tools.skip_reason === 'login_needs_sign_in') {
     return i18nT('pages.settings.securityPanel.agent_identity_tools_skipped_login')
+  }
+  if (data.tools.skip_reason === 'proxy_unavailable') {
+    return i18nT('pages.settings.securityPanel.agent_identity_code_proxy_unavailable')
   }
   return null
 }
@@ -2207,7 +2211,12 @@ function GatewayCatalogCard() {
             pending_auth: t.pending_auth,
             syncable: t.syncable,
           })),
-          tools: { reachable: data.tools.reachable, skip_reason: data.tools.skip_reason, count: tools.length },
+          tools: {
+            reachable: data.tools.reachable,
+            skip_reason: data.tools.skip_reason,
+            via: data.tools.via ?? null,
+            count: tools.length,
+          },
         },
         null,
         2,

@@ -2186,4 +2186,32 @@ describe('SecurityPanel — agent identity', () => {
       }),
     ).toBeInTheDocument()
   })
+
+  it('explains when the local SigV4 proxy cannot start', async () => {
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      extra_installed: true,
+      extra_code: 'ok',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      workload_name: 'kirocrew-e2e',
+    })
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...CATALOG_IDLE,
+      code: 'ok',
+      posture: 'workload',
+      workload_name: 'kirocrew-e2e',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      tools: { reachable: false, skip_reason: 'proxy_unavailable', items: [], via: null },
+      checks: [{ id: 'tools', ok: false, detail: 'proxy_unavailable' }],
+    })
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+    expect(
+      await screen.findAllByText(
+        i18nT('pages.settings.securityPanel.agent_identity_code_proxy_unavailable'),
+      ),
+    ).not.toHaveLength(0)
+  })
 })

@@ -12265,7 +12265,8 @@
           "ineffective_description": "এই নামগুলো বিশ্বাসযোগ্য হিসেবে সংরক্ষিত হয়েছিল, কিন্তু Kiro Crew এগুলো গ্রহণ করে না, তাই অ্যাপগুলো এখনও ব্লক আছে। তালিকা পরিষ্কার করতে এগুলো সরিয়ে দিন।"
         },
         "agent_identity_name_required": "পরিচয় চালু করার আগে ওয়ার্কলোড নাম সেট করুন।",
-        "agent_identity_code_not_kirocrew": "এই গেটওয়ের আইডি kirocrew- দিয়ে শুরু নয়। ইনস্ট্যান্স রোল এটি পরীক্ষা করতে পারে, কিন্তু কল শুধু kirocrew-* গেটওয়েতে সীমাবদ্ধ।"
+        "agent_identity_code_not_kirocrew": "এই গেটওয়ের আইডি kirocrew- দিয়ে শুরু নয়। ইনস্ট্যান্স রোল এটি পরীক্ষা করতে পারে, কিন্তু কল শুধু kirocrew-* গেটওয়েতে সীমাবদ্ধ।",
+        "agent_identity_code_proxy_unavailable": "স্থানীয় গেটওয়ে প্রক্সি চালু করা যায়নি। এই গেটওয়েতে AgentCore সমর্থন ইনস্টল করুন, তারপর আবার যাচাই করুন।"
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "চ্যাট-ট্যাব পরিবর্তনকে Option+সংখ্যার বদলে Ctrl+সংখ্যার সঙ্গে বাঁধুন",

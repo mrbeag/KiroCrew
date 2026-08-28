@@ -12431,7 +12431,8 @@
           "ineffective_description": "Ces noms ont été enregistrés comme de confiance, mais Kiro Crew ne les accepte pas, donc les applications restent bloquées. Retire-les pour nettoyer la liste."
         },
         "agent_identity_name_required": "Définissez un nom de charge de travail avant d’activer l’identité.",
-        "agent_identity_code_not_kirocrew": "L’identifiant de cette passerelle ne commence pas par kirocrew-. Le rôle d’instance peut l’inspecter, mais l’invocation reste limitée aux passerelles kirocrew-*."
+        "agent_identity_code_not_kirocrew": "L’identifiant de cette passerelle ne commence pas par kirocrew-. Le rôle d’instance peut l’inspecter, mais l’invocation reste limitée aux passerelles kirocrew-*.",
+        "agent_identity_code_proxy_unavailable": "Le proxy local de la passerelle n’a pas pu démarrer. Installez la prise en charge AgentCore sur cette passerelle, puis vérifiez à nouveau."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "Associer le changement d'onglet de chat à Ctrl+chiffre au lieu de Option+chiffre",

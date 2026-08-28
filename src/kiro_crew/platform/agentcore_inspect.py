@@ -3,11 +3,13 @@
 Control plane (lazy ``bedrock-agentcore-control``): GetGateway,
 ListGatewayTargets, GetGatewayTarget, SynchronizeGatewayTargets.
 
-Data plane: MCP ``tools/list`` signed with the existing SigV4 helper
-on workload + IAM inbound. Login without a user JWT skips tools with a
-hint — this page cannot borrow a chat session. Workload catalog also
-vends-and-discards a WAT so a wrong identity name is visible; the
-token never appears in the snapshot and is never a Gateway bearer.
+Data plane: MCP ``tools/list`` on workload + IAM inbound goes through
+the same localhost SigV4 proxy kiro-cli uses (``ensure_workload_proxy``),
+not a direct signed POST to the Gateway hostname. Login without a user
+JWT skips tools with a hint — this page cannot borrow a chat session.
+Workload catalog also vends-and-discards a WAT so a wrong identity
+name is visible; the token never appears in the snapshot and is never
+a Gateway bearer.
 
 ``ListOauth2CredentialProviders`` is account-wide Identity directory
 and is not on this surface.
@@ -29,7 +31,6 @@ from kiro_crew.platform.agentcore_aws import (
     resolved_posture,
     resolved_workload_name,
 )
-from kiro_crew.platform.agentcore_sigv4 import sign_aws_request
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,10 @@ SNAPSHOT_AWS_ERROR = "aws_error"
 TOOLS_SKIP_LOGIN = "login_needs_sign_in"
 TOOLS_SKIP_MISMATCH = "authorizer_mismatch"
 TOOLS_SKIP_UNREACHABLE = "tools_unreachable"
+TOOLS_SKIP_PROXY = "proxy_unavailable"
 TOOLS_DENIED = "tools_denied"
+TOOLS_VIA_PROXY = "proxy"
+_LOCAL_MCP_HOSTS = frozenset({"127.0.0.1", "localhost"})
 AUTHORIZER_IAM = "AWS_IAM"
 AUTHORIZER_JWT = "CUSTOM_JWT"
 GATEWAY_READY = "READY"
@@ -256,7 +260,7 @@ def _empty_snapshot(
 
 
 def _empty_tools(skip: str) -> dict[str, Any]:
-    return {"reachable": False, "skip_reason": skip, "items": []}
+    return {"reachable": False, "skip_reason": skip, "items": [], "via": None}
 
 
 def _control_client(region: str) -> Any | None:
@@ -533,15 +537,27 @@ def _list_tools(
         return _empty_tools(TOOLS_SKIP_LOGIN)
     if authorizer and authorizer != AUTHORIZER_IAM:
         return _empty_tools(TOOLS_SKIP_MISMATCH)
+    # Same localhost proxy kiro-cli uses. A direct SigV4 to the Gateway
+    # hostname can stay green while that agent path is down.
+    from kiro_crew.platform.agentcore_sigv4 import ensure_workload_proxy
+
+    listen = ensure_workload_proxy(url)
+    if not listen:
+        return _empty_tools(TOOLS_SKIP_PROXY)
     try:
-        session_id = _mcp_initialize(url, region)
-        items = _mcp_tools_list(url, region, session_id=session_id)
+        session_id = _mcp_initialize(listen, region)
+        items = _mcp_tools_list(listen, region, session_id=session_id)
     except _ToolsDenied:
         return _empty_tools(TOOLS_DENIED)
     except Exception:
-        logger.warning("Gateway tools/list failed", exc_info=True)
+        logger.warning("Gateway tools/list via SigV4 proxy failed", exc_info=True)
         return _empty_tools(TOOLS_SKIP_UNREACHABLE)
-    return {"reachable": True, "skip_reason": None, "items": items[:TOOLS_LIST_MAX]}
+    return {
+        "reachable": True,
+        "skip_reason": None,
+        "items": items[:TOOLS_LIST_MAX],
+        "via": TOOLS_VIA_PROXY,
+    }
 
 
 def _tools_check(tools: dict[str, Any]) -> dict[str, Any]:
@@ -624,8 +640,11 @@ def _mcp_post(
     }
     if session_id:
         headers["Mcp-Session-Id"] = session_id
-    signed = sign_aws_request(method="POST", url=url, headers=headers, body=body, region=region)
-    request = urllib.request.Request(url, data=body, headers=signed, method="POST")
+    del region  # proxy signs with the upstream Gateway region
+    host = (urlparse(url).hostname or "").lower()
+    if host not in _LOCAL_MCP_HOSTS:
+        raise ValueError("inspect MCP post is localhost-only (SigV4 proxy)")
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=TOOLS_LIST_TIMEOUT_SECS) as resp:
             return dict(resp.headers.items()), resp.read()

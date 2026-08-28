@@ -381,6 +381,8 @@ export interface AgentcoreGatewayTools {
   reachable: boolean
   skip_reason: string | null
   items: Array<{ name: string; description: string }>
+  /** ``proxy`` when tools/list used the same localhost SigV4 path as the agent. */
+  via?: string | null
 }
 
 /** GET /api/agentcore/gateway and POST /verify. */

@@ -12098,7 +12098,8 @@
         "yolo_duration_until_shutdown": "Kiro Crew가 재시작될 때까지",
         "your_custom_denies": "사용자 지정 차단",
         "agent_identity_name_required": "자격 증명을 켜기 전에 워크로드 이름을 설정하세요.",
-        "agent_identity_code_not_kirocrew": "이 게이트웨이 ID는 kirocrew-로 시작하지 않습니다. 인스턴스 역할은 검사할 수 있지만 호출은 kirocrew-* 게이트웨이로만 제한됩니다."
+        "agent_identity_code_not_kirocrew": "이 게이트웨이 ID는 kirocrew-로 시작하지 않습니다. 인스턴스 역할은 검사할 수 있지만 호출은 kirocrew-* 게이트웨이로만 제한됩니다.",
+        "agent_identity_code_proxy_unavailable": "로컬 게이트웨이 프록시를 시작하지 못했습니다. 이 게이트웨이에 AgentCore 지원을 설치한 다음 다시 확인하세요."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "채팅 탭 전환을 Option+숫자 대신 Ctrl+숫자에 할당합니다",

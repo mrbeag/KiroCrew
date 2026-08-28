@@ -187,11 +187,84 @@ def test_authorizer_mismatch_on_login_gateway(monkeypatch: pytest.MonkeyPatch) -
 def test_login_skips_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inspect, "resolved_gateway_url", lambda: GW_URL)
     monkeypatch.setattr(inspect, "resolved_posture", lambda: "login")
+    started: list[str] = []
+
+    def _boom(url: str) -> str | None:
+        started.append(url)
+        raise AssertionError("login must not start the workload proxy")
+
+    monkeypatch.setattr(
+        "kiro_crew.platform.agentcore_sigv4.ensure_workload_proxy",
+        _boom,
+    )
     tools = inspect._list_tools(
         url=GW_URL, region="us-west-2", posture="login", authorizer="CUSTOM_JWT"
     )
     assert tools["reachable"] is False
     assert tools["skip_reason"] == inspect.TOOLS_SKIP_LOGIN
+    assert started == []
+
+
+def test_workload_tools_go_through_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    listen = "http://127.0.0.1:9/mcp"
+    upstreams: list[str] = []
+    posts: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "kiro_crew.platform.agentcore_sigv4.ensure_workload_proxy",
+        lambda url: upstreams.append(url) or listen,
+    )
+
+    def _post(
+        url: str,
+        region: str,
+        payload: dict[str, Any],
+        *,
+        session_id: str = "",
+    ) -> tuple[dict[str, str], bytes]:
+        del region, session_id
+        posts.append((url, str(payload.get("method") or "")))
+        if payload.get("method") == "initialize":
+            return {}, b'{"jsonrpc":"2.0","id":1,"result":{}}'
+        return (
+            {},
+            b'{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"echo-hello___echo_hello"}]}}',
+        )
+
+    monkeypatch.setattr(inspect, "_mcp_post", _post)
+    tools = inspect._list_tools(
+        url=GW_URL, region="us-west-2", posture="workload", authorizer="AWS_IAM"
+    )
+    assert upstreams == [GW_URL]
+    assert posts == [
+        (listen, "initialize"),
+        (listen, "tools/list"),
+    ]
+    assert tools["reachable"] is True
+    assert tools["via"] == inspect.TOOLS_VIA_PROXY
+    assert tools["items"][0]["name"] == "echo-hello___echo_hello"
+
+
+def test_proxy_unavailable_skips_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "kiro_crew.platform.agentcore_sigv4.ensure_workload_proxy",
+        lambda _url: None,
+    )
+    tools = inspect._list_tools(
+        url=GW_URL, region="us-west-2", posture="workload", authorizer="AWS_IAM"
+    )
+    assert tools["reachable"] is False
+    assert tools["skip_reason"] == inspect.TOOLS_SKIP_PROXY
+    assert tools["via"] is None
+
+
+def test_mcp_post_refuses_unsigned_remote_host() -> None:
+    with pytest.raises(ValueError, match="localhost-only"):
+        inspect._mcp_post(
+            GW_URL,
+            "us-west-2",
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        )
 
 
 def test_snapshot_access_denied(monkeypatch: pytest.MonkeyPatch) -> None:

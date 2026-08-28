@@ -917,6 +917,19 @@ Closed on the production-ready pass:
   does not resolve fails as `FAILED` with `statusReasons`; Settings
   now shows those reasons on the target row.
 
+Closed on the agent-path honesty pass:
+
+- Catalog / Verify `tools/list` uses `ensure_workload_proxy` and an
+  unsigned localhost POST — the same path rebuild writes into
+  `kirocrew.json`. A green tools check is no longer a direct SigV4
+  to the Gateway hostname. Proxy start failure is
+  `proxy_unavailable`. Isolated rebuild of a workload spec persists
+  `http://127.0.0.1:<port>/mcp`. Live under assumed-role
+  `kirocrew-e2e-instance`: snapshot `via=proxy`, both targets'
+  tools listed, `gateway_mcp_spec()` listen URL
+  `http://127.0.0.1:<port>/mcp`, and `tools/call`
+  `echo-hello___echo_hello` succeeded through that listener.
+
 Still open (not v1 blockers):
 
 - Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP

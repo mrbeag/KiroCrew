@@ -258,6 +258,22 @@ def test_login_missing_spec_still_withholds_gateway() -> None:
     asyncio.run(_run())
 
 
+def test_workload_rebuild_writes_localhost_proxy_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Isolated rebuild must persist the listen URL kiro-cli will call."""
+    from kiro_crew.agent import rebuild_agent_config
+
+    proxy = "http://127.0.0.1:64156/mcp"
+    kiro_dir = _seed_rebuild(tmp_path, monkeypatch)
+    _install(posture="workload", spec={"url": proxy})
+    rebuild_agent_config()
+    spec = _rebuilt_servers(kiro_dir)["agentcore-gateway"]
+    assert spec["url"] == proxy
+    assert spec["url"].startswith("http://127.0.0.1:")
+    assert "headers" not in spec
+
+
 def test_workload_rebuild_is_url_only_no_sidecar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

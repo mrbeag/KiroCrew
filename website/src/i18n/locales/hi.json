@@ -12265,7 +12265,8 @@
           "ineffective_description": "ये नाम भरोसेमंद के रूप में सहेजे गए थे, पर Kiro Crew इन्हें स्वीकार नहीं करता, इसलिए ये ऐप अब भी ब्लॉक हैं। सूची साफ़ करने के लिए इन्हें हटा दें।"
         },
         "agent_identity_name_required": "पहचान चालू करने से पहले वर्कलोड नाम सेट करें।",
-        "agent_identity_code_not_kirocrew": "इस गेटवे की आईडी kirocrew- से शुरू नहीं होती। इंस्टेंस भूमिका इसे पढ़ सकती है, लेकिन कॉल केवल kirocrew-* गेटवे तक सीमित रहती है।"
+        "agent_identity_code_not_kirocrew": "इस गेटवे की आईडी kirocrew- से शुरू नहीं होती। इंस्टेंस भूमिका इसे पढ़ सकती है, लेकिन कॉल केवल kirocrew-* गेटवे तक सीमित रहती है।",
+        "agent_identity_code_proxy_unavailable": "स्थानीय गेटवे प्रॉक्सी शुरू नहीं हो सकी। इस गेटवे पर AgentCore समर्थन इंस्टॉल करें, फिर फिर से सत्यापित करें।"
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "चैट-टैब स्विचिंग को Option+अंक के बजाय Ctrl+अंक से बाइंड करें",

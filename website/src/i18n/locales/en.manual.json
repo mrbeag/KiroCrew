@@ -4666,6 +4666,7 @@
         "agent_identity_code_identity_not_found": "AWS has no workload identity with this name.",
         "agent_identity_code_identity_error": "Could not vend a workload token. Check the gateway logs.",
         "agent_identity_code_not_kirocrew": "This Gateway's id is not kirocrew-prefixed. The instance role can inspect it, but invoke stays limited to kirocrew-* Gateways.",
+        "agent_identity_code_proxy_unavailable": "The local Gateway proxy could not start. Install AgentCore support on this gateway, then verify again.",
         "agent_identity_copy_debug": "Copy debug summary",
         "agent_identity_copied": "Copied",
         "agent_identity_never_synced": "Never",

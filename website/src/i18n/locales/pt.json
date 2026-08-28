@@ -12430,7 +12430,8 @@
           "ineffective_description": "Esses nomes foram salvos como confiáveis, mas o Kiro Crew não os aceita, então os apps continuam bloqueados. Remova-os para limpar a lista."
         },
         "agent_identity_name_required": "Defina um nome de carga de trabalho antes de ativar a identidade.",
-        "agent_identity_code_not_kirocrew": "O id deste gateway não começa com kirocrew-. A função da instância pode inspecioná-lo, mas a invocação continua limitada a gateways kirocrew-*."
+        "agent_identity_code_not_kirocrew": "O id deste gateway não começa com kirocrew-. A função da instância pode inspecioná-lo, mas a invocação continua limitada a gateways kirocrew-*.",
+        "agent_identity_code_proxy_unavailable": "O proxy local do gateway não pôde ser iniciado. Instale o suporte ao AgentCore neste gateway e verifique novamente."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "Vincular a alternância de abas de chat a Ctrl+dígito em vez de Option+dígito",

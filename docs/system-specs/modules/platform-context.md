@@ -440,8 +440,11 @@ delegates to that same global. Wired sites:
   `agentcore.unattended_denied`).   Settings catalog / verify / sync is
   owner-only `GET`/`POST /api/agentcore/gateway` against
   `platform/agentcore_inspect.py` (control-plane
-  `bedrock-agentcore-control`; data-plane MCP `tools/list` via SigV4
-  on workload+IAM; login skips tools with a sign-in hint). Workload
+  `bedrock-agentcore-control`; data-plane MCP `tools/list` on
+  workload+IAM through the same localhost SigV4 proxy kiro-cli uses —
+  a green tools check is the agent path, not a direct signed POST to
+  the Gateway hostname; `proxy_unavailable` when that listener cannot
+  start; login skips tools with a sign-in hint). Workload
   catalog also probes `GetWorkloadAccessToken` and discards the body
   so a wrong or Gateway-linked identity name shows as the `identity`
   check (`service_linked` / `identity_denied` / `not_named`); login

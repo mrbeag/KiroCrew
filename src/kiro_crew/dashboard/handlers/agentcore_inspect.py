@@ -2,8 +2,9 @@
 
 Owner dashboard cookie only. App tokens are refused: these routes
 enumerate AWS account Gateways and can start a target Sync. GET is
-live control-plane + optional tools/list + a vend-and-discard WAT
-probe; POST /verify is the same snapshot with a distinct SEL verb;
+live control-plane + optional tools/list (through the workload SigV4
+proxy) + a vend-and-discard WAT probe; POST /verify is the same
+snapshot with a distinct SEL verb;
 POST /sync asks the Gateway to refresh one DEFAULT target.
 
 A WAT never leaves this handler. Non-2xx bodies carry a machine

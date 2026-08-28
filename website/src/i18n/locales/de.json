@@ -12264,7 +12264,8 @@
           "ineffective_description": "Diese Namen wurden als vertrauenswürdig gespeichert, aber Kiro Crew akzeptiert sie nicht, deshalb bleiben die Apps blockiert. Entferne sie, um die Liste aufzuräumen."
         },
         "agent_identity_name_required": "Lege einen Workload-Namen fest, bevor du die Identität einschaltest.",
-        "agent_identity_code_not_kirocrew": "Die ID dieses Gateways beginnt nicht mit kirocrew-. Die Instanzrolle kann es prüfen, aber der Aufruf bleibt auf kirocrew-*-Gateways beschränkt."
+        "agent_identity_code_not_kirocrew": "Die ID dieses Gateways beginnt nicht mit kirocrew-. Die Instanzrolle kann es prüfen, aber der Aufruf bleibt auf kirocrew-*-Gateways beschränkt.",
+        "agent_identity_code_proxy_unavailable": "Der lokale Gateway-Proxy konnte nicht gestartet werden. Installiere AgentCore-Unterstützung auf diesem Gateway und prüfe erneut."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "Wechsel zwischen Chat-Tabs an Strg+Zahl statt Option+Zahl binden",
