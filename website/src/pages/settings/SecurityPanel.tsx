@@ -2367,6 +2367,10 @@ function AgentIdentitySection() {
       }),
     onSuccess: next => {
       queryClient.setQueryData(['agentcore-identity'], next)
+      // Catalog checks (authorizer, identity, tools) depend on the saved
+      // posture/name/url. Leaving the previous snapshot up after Save is how
+      // a login-vs-IAM mismatch stays green until the operator remembers Verify.
+      void queryClient.invalidateQueries({ queryKey: ['agentcore-gateway'] })
     },
   })
   const dirty =

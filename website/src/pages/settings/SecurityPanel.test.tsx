@@ -1991,6 +1991,42 @@ describe('SecurityPanel — agent identity', () => {
     )
   })
 
+  it('refetches the Gateway catalog after identity save', async () => {
+    const configured = {
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload' as const,
+      source: 'policy',
+      extra_installed: true,
+      extra_code: 'ok',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      workload_name: 'kirocrew-e2e',
+    }
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue(configured)
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...CATALOG_IDLE,
+      code: 'ok',
+      posture: 'workload',
+      gateway_url: configured.gateway_url,
+    })
+    ;(api.saveAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...configured,
+      posture: 'login',
+      restart_required: true,
+    })
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+    await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_catalog'))
+    const before = (api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mock.calls.length
+    fireEvent.change(
+      screen.getByLabelText(i18nT('pages.settings.securityPanel.agent_identity_posture')),
+      { target: { value: 'login' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }))
+    await waitFor(() =>
+      expect((api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before),
+    )
+  })
+
   it('explains when this gateway cannot install AgentCore support', async () => {
     ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...IDENTITY_UNSET,
