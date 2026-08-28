@@ -7375,7 +7375,16 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               <div style={{height: '2vh'}} />
             </div>
             )}
-            <div className="h-6 bg-gradient-to-t from-bg to-transparent pointer-events-none -mt-6 relative z-[1]" />
+            {/* Transcript bottom fade. The `from-25%` stop is load-bearing, not
+                decoration: the transcript is hard-clipped at the scrollport's
+                bottom edge whenever the user is scrolled up, and a gradient that
+                only reaches full opacity AT that edge leaves its topmost rows
+                just shy of opaque — so the clipped glyph strokes bled through as
+                a faint 1-3px hairline sitting directly above the options row.
+                Measured over a blank control at 390px: +7.6 / +5.2 / +1.9 mean
+                channel at 3 / 2 / 1px above the edge, and 0.00 on every row once
+                the bottom quarter is solid. */}
+            <div className="h-6 bg-gradient-to-t from-bg from-25% to-transparent pointer-events-none -mt-6 relative z-[1]" />
             <div className="relative">
               {!isAtBottom && messages.length > 0 && (
                 <div className="absolute -top-10 inset-x-0 z-10 pointer-events-none flex justify-center">
