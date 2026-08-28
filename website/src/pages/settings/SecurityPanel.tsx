@@ -2070,6 +2070,15 @@ function AgentIdentitySection() {
               {data?.restart_required && (
                 <p className="text-[12px] text-warn">{i18nT('pages.settings.securityPanel.agent_identity_restart')}</p>
               )}
+              {data?.extra_code === 'no_install_channel' && (
+                <p className="text-[12px] text-warn">{i18nT('pages.settings.securityPanel.agent_identity_extra_missing_channel')}</p>
+              )}
+              {data?.extra_code === 'install_failed' && (
+                <p className="text-[12px] text-warn">{i18nT('pages.settings.securityPanel.agent_identity_extra_failed')}</p>
+              )}
+              {data?.configured && data.extra_installed === false && data.extra_code !== 'no_install_channel' && data.extra_code !== 'install_failed' && (
+                <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_extra_needed')}</p>
+              )}
               {consentError && (
                 <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_consent_refused')}</p>
               )}

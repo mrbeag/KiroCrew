@@ -40,6 +40,15 @@ def _isolate(monkeypatch, tmp_path: Path, *, env: dict[str, str] | None = None) 
     monkeypatch.setattr(mod, "current_context", lambda: type("C", (), {"governance": None})())
     monkeypatch.setattr(mod, "agentcore_posture", lambda _ceiling: None)
     monkeypatch.setattr(mod, "_audit", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "ensure_extra", lambda: "ok")
+    monkeypatch.setattr(
+        mod,
+        "extra_snapshot",
+        lambda last_code=None: {
+            "extra_installed": last_code == "ok" or last_code is None,
+            "extra_code": last_code if last_code is not None else "ok",
+        },
+    )
     return home
 
 
@@ -159,3 +168,45 @@ def test_put_rejects_bad_posture(tmp_path: Path, monkeypatch) -> None:
     resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "yolo"})))
     assert resp.status == 400
     assert json.loads(resp.text)["code"] == "invalid_agentcore_posture"
+
+
+def test_put_configures_default_workload_name_and_installs_extra(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    def _record() -> str:
+        calls.append("ensure")
+        return "ok"
+
+    home = _isolate(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "ensure_extra", _record)
+    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "workload"})))
+    assert resp.status == 200
+    body = json.loads(resp.text)
+    assert body["workload_name"] == "kirocrew"
+    assert body["extra_code"] == "ok"
+    assert body["extra_installed"] is True
+    assert calls == ["ensure"]
+    assert (
+        json.loads(home.read_text(encoding="utf-8"))["capabilities"]["agentcore"]["posture"]
+        == "workload"
+    )
+
+
+def test_put_none_does_not_install_extra(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+    _isolate(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "ensure_extra", lambda: calls.append("ensure") or "ok")
+    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "none"})))
+    assert resp.status == 200
+    assert calls == []
+
+
+def test_get_does_not_install_extra(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+    _isolate(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "ensure_extra", lambda: calls.append("ensure") or "ok")
+    resp = asyncio.run(mod.api_agentcore_identity_get(_Req()))
+    assert resp.status == 200
+    assert calls == []

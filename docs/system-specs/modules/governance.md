@@ -1284,8 +1284,12 @@ PUT merges `capabilities.agentcore` into the standalone home
 `policy_not_writable`). App tokens are 403 `dashboard_user_required` — the
 same owner-only trust model as computer-use Settings. The ceiling is
 boot-frozen, so a write that changes posture returns `restart_required`.
-This is not a Remote Crew / launch control: a hub launching another box is
-a different crew.
+A write to `workload` or `login` also installs `kirocrew[agentcore]` into this
+gateway interpreter (`ensure_extra`); GET never pips. The snapshot carries
+`extra_installed` and `extra_code` (`ok` / `no_install_channel` /
+`install_failed` / `null`). A Settings-only configure with no systemd name
+uses the RFC default workload name `kirocrew`. This is not a Remote Crew /
+launch control: a hub launching another box is a different crew.
 
 `capabilities.publish` is a `CapabilityGate` (opt-in: `capability_default=False`)
 with an inner `destinations` `ScopedRuleset` (`identifier` matcher) bounding

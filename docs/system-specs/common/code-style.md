@@ -41,6 +41,7 @@ Paths below are relative to `src/kiro_crew/`.
 | Base agent config | `config/defaults.json` | `tools`, `allowedTools`, `resources`, `hooks`, model. Packaged as package data, so editing it needs no code change. |
 | Managed MCP server specs | `agent.py` | `_MANAGED_MCP_SERVERS`: which servers are auto-registered and refreshed while preserving user customizations. |
 | AgentCore Gateway MCP name + inbound sidecar dir | `platform/agentcore_gateway.py` | `GATEWAY_SERVER_NAME` (`agentcore-gateway`), `INBOUND_DIR_NAME` (`agentcore-inbound`), `UNATTENDED_SESSION_PREFIXES`, companion `status()` keys (`authorizationUrl`, `credentialKind`, `vaultedOwnerToken`), sidecar states (`SIDECAR_LIVE` / `DENIED` / `EXPIRED` / `ABSENT`), `REASON_EXPIRED`. |
+| AgentCore extra install | `platform/agentcore_aws.py` | `DEFAULT_WORKLOAD_NAME` (`kirocrew`), `EXTRA_CODE_*`, `EXTRA_REQ_WHEEL`, `_PIP_TIMEOUT_SECS`, `ENV_*` AgentCore names. |
 | Built-in skills | `builtin_skills/<name>/SKILL.md` | Frontmatter (`always`, `triggers`, `dir`) is the skill's own contract. This is the only tree copied into a user's `~/.kiro/crew/skills/`. |
 
 Other style rules:

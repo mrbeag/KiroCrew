@@ -90,6 +90,8 @@ describe('SecurityPanel floor-enforced rule lock', () => {
       writable: true,
       write_blocked: null,
       restart_required: false,
+      extra_installed: false,
+      extra_code: null,
     } as never)
     vi.spyOn(api, 'getAgentcoreConsent').mockResolvedValue({ pending: false, url: null })
   })

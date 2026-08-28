@@ -16,6 +16,7 @@ The ceiling is boot-frozen. A write that changes posture returns
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,11 @@ from typing import Any
 
 from aiohttp import web
 
+from kiro_crew.platform.agentcore_aws import (
+    DEFAULT_WORKLOAD_NAME,
+    ensure_extra,
+    extra_snapshot,
+)
 from kiro_crew.platform.context import current_context
 from kiro_crew.platform.governance import (
     PlatformCompositionError,
@@ -70,8 +76,13 @@ def _audit(
         logger.warning("SEL logging failed for %s", operation, exc_info=True)
 
 
-def _workload_name() -> str:
-    return os.environ.get(_ENV_WORKLOAD, "").strip()
+def _workload_name(posture: str | None = None) -> str:
+    name = os.environ.get(_ENV_WORKLOAD, "").strip()
+    if name:
+        return name
+    if posture in {"workload", "login"}:
+        return DEFAULT_WORKLOAD_NAME
+    return ""
 
 
 def _file_posture() -> str | None:
@@ -117,34 +128,34 @@ def _write_reason() -> str:
     return ""
 
 
-def _snapshot() -> dict[str, Any]:
+def _snapshot(*, last_extra_code: str | None = None) -> dict[str, Any]:
     """Display the authored posture; flag when the running ceiling is stale.
 
     Settings configures THIS crew's home policy. The ceiling is boot-frozen,
     so a file that disagrees with ``agentcore_posture(ceiling)`` is a pending
-    restart, not an unset identity.
+    restart, not an unset identity. ``last_extra_code`` is a just-ran
+    ``ensure_extra`` result (PUT); GET never pips.
     """
     ceiling = getattr(current_context(), "governance", None)
     running = agentcore_posture(ceiling)
     reason = _write_reason()
-    name = _workload_name()
+    name_env = os.environ.get(_ENV_WORKLOAD, "").strip()
     if reason == "fleet_override":
         displayed = running
-        source = "policy" if running else ("env" if name else "unset")
+        source = "policy" if running else ("env" if name_env else "unset")
         restart = False
     else:
         authored = _file_posture()
         displayed = authored if authored is not None else running
-        if authored is not None:
+        if authored is not None or running is not None:
             source = "policy"
-        elif running is not None:
-            source = "policy"
-        elif name:
+        elif name_env:
             source = "env"
         else:
             source = "unset"
         restart = authored is not None and authored != running
-    return {
+    name = _workload_name(displayed)
+    payload: dict[str, Any] = {
         "configured": displayed is not None,
         "posture": displayed,
         "workload_name": name,
@@ -153,6 +164,8 @@ def _snapshot() -> dict[str, Any]:
         "write_blocked": reason or None,
         "restart_required": restart,
     }
+    payload.update(extra_snapshot(last_code=last_extra_code))
+    return payload
 
 
 def _read_home_document() -> dict[str, Any]:
@@ -203,17 +216,17 @@ async def api_agentcore_identity_get(request: web.Request) -> web.Response:
     except Exception:
         logger.warning("agentcore identity snapshot failed", exc_info=True)
         _audit(request, operation=OP_GET, outcome="error", error="snapshot_failed")
-        return web.json_response(
-            {
-                "configured": False,
-                "posture": None,
-                "workload_name": _workload_name(),
-                "source": "unset",
-                "writable": False,
-                "write_blocked": "unavailable",
-                "restart_required": False,
-            }
-        )
+        fallback: dict[str, Any] = {
+            "configured": False,
+            "posture": None,
+            "workload_name": _workload_name(),
+            "source": "unset",
+            "writable": False,
+            "write_blocked": "unavailable",
+            "restart_required": False,
+        }
+        fallback.update(extra_snapshot())
+        return web.json_response(fallback)
     _audit(request, operation=OP_GET, outcome="success")
     return web.json_response(payload)
 
@@ -345,6 +358,9 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             {"error": "could not write security policy", "code": "write_failed"},
             status=500,
         )
-    payload = _snapshot()
+    extra_code = None
+    if posture in {"workload", "login"}:
+        extra_code = await asyncio.to_thread(ensure_extra)
+    payload = _snapshot(last_extra_code=extra_code)
     _audit(request, operation=OP_SAVE, outcome="success", resources=posture)
     return web.json_response(payload)

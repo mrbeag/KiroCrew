@@ -1,12 +1,14 @@
-"""Optional AWS AgentCore adapter — installed by IaC, not the default wheel.
+"""Optional AWS AgentCore adapter — installed by IaC or on configure.
 
 The public ``DefaultAgentIdentityProvider`` stays a no-op. Bootstrap
 imports this module on standalone boot and attaches the adapter only
-when :func:`opted_in` is true (workload name plus ``KIROCREW_AGENTCORE_AWS=1``
-or a ``workload``/``login`` posture). ``boto3`` is loaded inside methods so
-``import kiro_crew.platform.agentcore_aws`` does not pull AWS into a
-process that never opted in. The ``agentcore`` extra / ``install.sh
---agentcore`` is what IaC installs on the box.
+when :func:`opted_in` is true (home-policy or env posture
+``workload``/``login``, or a named workload plus
+``KIROCREW_AGENTCORE_AWS=1``). A configured posture also
+:func:`ensure_extra` so ``kirocrew[agentcore]`` lands in the gateway
+interpreter without a CFN ``--agentcore`` flag. ``boto3`` is loaded
+inside methods so ``import kiro_crew.platform.agentcore_aws`` does not
+pull AWS into a process that never opted in.
 
 A workload access token is first-party Identity material. It is never the
 Gateway inbound credential and never appears in ``status()``.
@@ -15,17 +17,25 @@ Gateway inbound credential and never appears in ``status()``.
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import logging
 import os
+import subprocess
+import sys
+import sysconfig
+import threading
 import time
+from pathlib import Path
 from typing import Any
 
+from kiro_crew.constants import env_flag_enabled
 from kiro_crew.platform.interfaces import (
     InboundToken,
     SessionPrincipal,
     WorkloadIdentity,
 )
+from kiro_crew.platform_compat import is_bundled_interpreter
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +43,19 @@ ENV_AWS = "KIROCREW_AGENTCORE_AWS"
 ENV_WORKLOAD = "KIROCREW_AGENTCORE_WORKLOAD_NAME"
 ENV_GATEWAY_URL = "KIROCREW_AGENTCORE_GATEWAY_URL"
 ENV_POSTURE = "KIROCREW_AGENTCORE_POSTURE"
+ENV_PROJECT_DIR = "KIROCREW_PROJECT_DIR"
+# RFC hand-rolled / Settings-only default when no systemd name is set.
+DEFAULT_WORKLOAD_NAME = "kirocrew"
+EXTRA_CODE_OK = "ok"
+EXTRA_CODE_NO_CHANNEL = "no_install_channel"
+EXTRA_CODE_FAILED = "install_failed"
+EXTRA_REQ_WHEEL = "kirocrew[agentcore]"
 # boto3 client name (lazy). Not the ``bedrock-agentcore`` SDK package.
 _CLIENT = "bedrock-agentcore"
 _JWT_FALLBACK_TTL_SECS = 300.0
+_PIP_TIMEOUT_SECS = 180
+_CONFIGURED_POSTURES = frozenset({"workload", "login"})
+_ENSURE_LOCK = threading.Lock()
 
 
 def _env(name: str) -> str:
@@ -51,14 +71,143 @@ def extra_available() -> bool:
     return True
 
 
-def opted_in() -> bool:
-    """Template/operator opt-in. Workload name alone must not flip a test host."""
-    if not _env(ENV_WORKLOAD):
+def pip_install_channel_available() -> bool:
+    """True when ``<gateway python> -m pip install`` can plausibly succeed.
+
+    Same three dead-ends as the voice extra: a bundled desktop interpreter
+    (writes break the code-signed tree), a missing ``pip`` module, and a
+    PEP 668 externally-managed interpreter outside a venv. Duplicated here
+    so the platform layer never imports the dashboard.
+    """
+    if is_bundled_interpreter():
         return False
-    flag = _env(ENV_AWS).lower()
-    if flag in {"1", "true", "yes"}:
+    if importlib.util.find_spec("pip") is None:
+        return False
+    if sys.prefix != sys.base_prefix:
         return True
-    return _env(ENV_POSTURE).lower() in {"workload", "login"}
+    return not (Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").exists()
+
+
+def authored_posture() -> str | None:
+    """Posture authored in the standalone home file, if any.
+
+    Peek only — do not parse_policy. Bootstrap and Settings need to see a
+    just-written file even when the running ceiling is still boot-frozen.
+    """
+    from kiro_crew.platform.governance import _policy_home_path
+
+    path = _policy_home_path()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    caps = data.get("capabilities")
+    if not isinstance(caps, dict):
+        return None
+    row = caps.get("agentcore")
+    if not isinstance(row, dict) or not row.get("enabled"):
+        return None
+    posture = str(row.get("posture") or "").strip().lower()
+    return posture if posture in _CONFIGURED_POSTURES else None
+
+
+def opted_in() -> bool:
+    """True when policy or env has configured AgentCore identity.
+
+    A workload name alone must not flip a test host. A configured posture
+    (home file or ``KIROCREW_AGENTCORE_POSTURE``) is enough — Settings
+    does not set the systemd name. The explicit AWS flag still requires
+    a name so a leftover ``KIROCREW_AGENTCORE_AWS=1`` is inert.
+    """
+    if authored_posture() in _CONFIGURED_POSTURES:
+        return True
+    if _env(ENV_POSTURE).lower() in _CONFIGURED_POSTURES:
+        return True
+    return env_flag_enabled(ENV_AWS) and bool(_env(ENV_WORKLOAD))
+
+
+def resolved_workload_name() -> str:
+    """Env name, or the RFC default when a posture is already configured."""
+    name = _env(ENV_WORKLOAD)
+    if name:
+        return name
+    if authored_posture() in _CONFIGURED_POSTURES:
+        return DEFAULT_WORKLOAD_NAME
+    if _env(ENV_POSTURE).lower() in _CONFIGURED_POSTURES:
+        return DEFAULT_WORKLOAD_NAME
+    return ""
+
+
+def extra_snapshot(*, last_code: str | None = None) -> dict[str, object]:
+    """Identity API fields for whether the extra is importable.
+
+    GET never pips. ``last_code`` is the result of a just-ran
+    :func:`ensure_extra` (PUT / bootstrap).
+    """
+    installed = extra_available()
+    if last_code is not None:
+        code: str | None = last_code
+    elif installed:
+        code = EXTRA_CODE_OK
+    elif not pip_install_channel_available():
+        code = EXTRA_CODE_NO_CHANNEL
+    else:
+        code = None
+    return {"extra_installed": installed, "extra_code": code}
+
+
+def _extra_install_argv() -> list[str]:
+    """Install into this interpreter. Checkout extra when the tree is present."""
+    root = _env(ENV_PROJECT_DIR)
+    if root:
+        setup = Path(root) / "setup.cfg"
+        if setup.is_file():
+            return [sys.executable, "-m", "pip", "install", "-e", f"{root}[agentcore]"]
+    return [sys.executable, "-m", "pip", "install", EXTRA_REQ_WHEEL]
+
+
+def ensure_extra() -> str:
+    """Install ``kirocrew[agentcore]`` into the gateway interpreter if needed.
+
+    Returns ``ok``, ``no_install_channel``, or ``install_failed``. Does not
+    uninstall when posture is later turned off. Never raises — a failed
+    pip must not block the policy write that triggered it.
+    """
+    with _ENSURE_LOCK:
+        if extra_available():
+            return EXTRA_CODE_OK
+        if not pip_install_channel_available():
+            logger.warning(
+                "AgentCore extra is configured but this interpreter cannot "
+                "pip-install (bundled, no pip, or PEP 668)"
+            )
+            return EXTRA_CODE_NO_CHANNEL
+        argv = _extra_install_argv()
+        try:
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=_PIP_TIMEOUT_SECS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("AgentCore extra install failed to run", exc_info=True)
+            return EXTRA_CODE_FAILED
+        if result.returncode != 0 or not extra_available():
+            logger.warning(
+                "AgentCore extra install failed (rc=%s): %s",
+                result.returncode,
+                (result.stderr or result.stdout or "").strip()[-500:],
+            )
+            return EXTRA_CODE_FAILED
+        return EXTRA_CODE_OK
 
 
 def try_aws_agent_identity() -> "AwsAgentIdentityProvider | None":
@@ -67,8 +216,8 @@ def try_aws_agent_identity() -> "AwsAgentIdentityProvider | None":
         return None
     if not extra_available():
         logger.warning(
-            "KIROCREW_AGENTCORE_AWS is set but boto3 is missing; "
-            "install kirocrew[agentcore] (the EC2 template does this)"
+            "AgentCore identity is configured but boto3 is missing; "
+            "install kirocrew[agentcore] (Settings save and the EC2 template do this)"
         )
         return None
     return AwsAgentIdentityProvider()
@@ -78,16 +227,16 @@ class AwsAgentIdentityProvider:
     """AgentIdentityProvider backed by instance-role boto3 calls."""
 
     def enabled(self) -> bool:
-        return bool(_env(ENV_WORKLOAD))
+        return bool(resolved_workload_name())
 
     def workload_identity(self) -> WorkloadIdentity | None:
-        name = _env(ENV_WORKLOAD)
+        name = resolved_workload_name()
         if not name:
             return None
         return WorkloadIdentity(name=name, arn=_workload_arn(name))
 
     def status(self) -> dict[str, object]:
-        posture = _env(ENV_POSTURE).lower()
+        posture = _env(ENV_POSTURE).lower() or (authored_posture() or "")
         kind = "m2m" if posture == "workload" else "user"
         return {
             "credentialKind": kind,
@@ -106,7 +255,7 @@ class AwsAgentIdentityProvider:
         return principal
 
     async def vend_workload_access_token(self, principal: SessionPrincipal) -> str | None:
-        name = _env(ENV_WORKLOAD)
+        name = resolved_workload_name()
         if not name:
             return None
         client = _client()

@@ -275,9 +275,13 @@ in the same CloudFormation stack that creates the instance.
 - systemd gets `KIROCREW_AGENTCORE_POSTURE`,
   `KIROCREW_AGENTCORE_WORKLOAD_NAME`, and optional
   `KIROCREW_AGENTCORE_GATEWAY_URL`. A non-`none` posture installs
-  `kirocrew[agentcore]` (`boto3`) via `install.sh --agentcore`. The
-  in-repo extra (`platform/agentcore_aws.py`) reads those env vars
-  and calls `GetWorkloadAccessToken*` through a lazy boto3 client.
+  `kirocrew[agentcore]` (`boto3`) via `install.sh --agentcore`.
+  Settings PUT and standalone boot also `ensure_extra()` when the
+  home policy or env posture is already `workload`/`login`, so a
+  box that skipped the CFN flag still gets boto3. The in-repo extra
+  (`platform/agentcore_aws.py`) reads those env vars (workload name
+  defaults to `kirocrew` when only the policy is set) and calls
+  `GetWorkloadAccessToken*` through a lazy boto3 client.
   Public core never imports the `bedrock-agentcore` SDK package and
   never registers `kirocrew.plugins`.
 - Opt-in: `AgentCorePosture=none` (default) is the historical
@@ -465,9 +469,11 @@ False`).
 An **opt-in extra** (`kirocrew[agentcore]`, boto3 only) implements
 `AgentIdentityProvider` in-tree as `AwsAgentIdentityProvider` so a
 deployed box can vend. IaC (`install.sh --agentcore`, the EC2
-template) installs it. Bootstrap swaps only `agent_identity` on a
-standalone profile — it does not flip to a companion and does not
-register `kirocrew.plugins`.
+template) installs it; a later policy or Settings configure
+force-installs the same extra into the gateway interpreter.
+Bootstrap swaps only `agent_identity` on a standalone profile — it
+does not flip to a companion and does not register
+`kirocrew.plugins`.
 
 The enterprise companion (separate package, `kirocrew.plugins` entry
 point) remains the home for operator IdP JWT annotation, Cognito /

@@ -135,6 +135,8 @@ const IDENTITY_UNSET = {
   writable: true,
   write_blocked: null,
   restart_required: false,
+  extra_installed: false,
+  extra_code: null,
 }
 
 const CONSENT_IDLE = { pending: false, url: null } as const
@@ -1932,5 +1934,21 @@ describe('SecurityPanel — agent identity', () => {
     })
     expect(link).toHaveAttribute('href', 'https://github.com/login/oauth/authorize')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('explains when this gateway cannot install AgentCore support', async () => {
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      extra_installed: false,
+      extra_code: 'no_install_channel',
+    })
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+
+    expect(
+      await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_extra_missing_channel')),
+    ).toBeInTheDocument()
   })
 })

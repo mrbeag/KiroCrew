@@ -502,8 +502,11 @@ companion. A launched box that opted into AgentCore actually vends.
 - Extra: `kirocrew[agentcore]` = `boto3>=1.34,<2` (`setup.cfg`)
 - Adapter: `platform/agentcore_aws.py` `AwsAgentIdentityProvider`
 - Bootstrap (standalone only): `dataclasses.replace` of
-  `agent_identity` when `opted_in()` — workload name plus
-  `KIROCREW_AGENTCORE_AWS=1` **or** posture `workload`/`login`
+  `agent_identity` when `opted_in()` — home-policy or env posture
+  `workload`/`login`, or a named workload plus
+  `KIROCREW_AGENTCORE_AWS=1`. `ensure_extra()` pips
+  `kirocrew[agentcore]` on that path and on Settings PUT
+  (not on GET; not uninstalled when posture returns to `none`)
 - IaC: `install.sh --agentcore`; CFN `AgentCoreGatewayUrl`; systemd
   `KIROCREW_AGENTCORE_GATEWAY_URL`
 - CLI: `kirocrew cloud launch --agentcore-gateway-url https://…`

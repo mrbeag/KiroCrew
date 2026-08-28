@@ -121,8 +121,11 @@ The instance bootstrap runs `install.sh --voice` on both its initial attempt and
 retry, and adds `--agentcore` when `AgentCorePosture` is not `none`. Voice
 installs `boto3` and `amazon-transcribe`; the AgentCore extra installs `boto3`
 so `platform/agentcore_aws.py` can vend a workload token without a companion
-package. Installing those SDKs after startup would otherwise require a gateway
-restart.
+package. A crew that configures identity later (home `security_policy.json`
+or Settings → Security → Agent identity) also force-installs that extra
+into the running gateway interpreter; the adapter attaches on the next boot.
+A desktop bundle or PEP 668 interpreter reports `no_install_channel` instead
+of writing into a locked tree.
 
 When the installed module belongs to a valid source checkout, the launcher
 packages that checkout and uploads it to a launcher-owned bucket

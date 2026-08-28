@@ -42,6 +42,7 @@ def test_opted_in_requires_name_and_flag_or_posture(monkeypatch) -> None:
     monkeypatch.delenv(aws_mod.ENV_WORKLOAD, raising=False)
     monkeypatch.delenv(aws_mod.ENV_AWS, raising=False)
     monkeypatch.delenv(aws_mod.ENV_POSTURE, raising=False)
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
     assert aws_mod.opted_in() is False
 
     monkeypatch.setenv(aws_mod.ENV_WORKLOAD, "kirocrew-kc-abc")
@@ -56,6 +57,17 @@ def test_opted_in_requires_name_and_flag_or_posture(monkeypatch) -> None:
 
     monkeypatch.setenv(aws_mod.ENV_POSTURE, "none")
     assert aws_mod.opted_in() is False
+
+
+def test_opted_in_from_policy_posture_without_env_name(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.delenv(aws_mod.ENV_WORKLOAD, raising=False)
+    monkeypatch.delenv(aws_mod.ENV_AWS, raising=False)
+    monkeypatch.delenv(aws_mod.ENV_POSTURE, raising=False)
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: "login")
+    assert aws_mod.opted_in() is True
+    assert aws_mod.resolved_workload_name() == aws_mod.DEFAULT_WORKLOAD_NAME
 
 
 def test_try_aws_returns_none_when_boto3_missing(monkeypatch) -> None:
@@ -204,6 +216,115 @@ def test_workload_identity_name_from_env(monkeypatch) -> None:
     assert ident is not None
     assert ident.name == "kirocrew-kc-abc"
     assert ident.name in ident.arn
+
+
+def test_ensure_extra_skips_pip_when_already_installed(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: True)
+
+    def _fail_run(*_a, **_k):
+        raise AssertionError("pip must not run when boto3 is already importable")
+
+    monkeypatch.setattr(aws_mod.subprocess, "run", _fail_run)
+    assert aws_mod.ensure_extra() == aws_mod.EXTRA_CODE_OK
+
+
+def test_ensure_extra_refuses_without_install_channel(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: False)
+    monkeypatch.setattr(aws_mod, "pip_install_channel_available", lambda: False)
+
+    def _fail_run(*_a, **_k):
+        raise AssertionError("pip must not run without an install channel")
+
+    monkeypatch.setattr(aws_mod.subprocess, "run", _fail_run)
+    assert aws_mod.ensure_extra() == aws_mod.EXTRA_CODE_NO_CHANNEL
+
+
+def test_ensure_extra_installs_editable_checkout(monkeypatch, tmp_path) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    (root / "setup.cfg").write_text("[metadata]\nname = kirocrew\n", encoding="utf-8")
+    monkeypatch.setenv(aws_mod.ENV_PROJECT_DIR, str(root))
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: False)
+    monkeypatch.setattr(aws_mod, "pip_install_channel_available", lambda: True)
+    seen: list[list[str]] = []
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _run(argv, **_kwargs):
+        seen.append(list(argv))
+        monkeypatch.setattr(aws_mod, "extra_available", lambda: True)
+        return _Result()
+
+    monkeypatch.setattr(aws_mod.subprocess, "run", _run)
+    assert aws_mod.ensure_extra() == aws_mod.EXTRA_CODE_OK
+    assert seen == [[aws_mod.sys.executable, "-m", "pip", "install", "-e", f"{root}[agentcore]"]]
+
+
+def test_ensure_extra_installs_wheel_when_no_checkout(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.delenv(aws_mod.ENV_PROJECT_DIR, raising=False)
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: False)
+    monkeypatch.setattr(aws_mod, "pip_install_channel_available", lambda: True)
+    seen: list[list[str]] = []
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _run(argv, **_kwargs):
+        seen.append(list(argv))
+        monkeypatch.setattr(aws_mod, "extra_available", lambda: True)
+        return _Result()
+
+    monkeypatch.setattr(aws_mod.subprocess, "run", _run)
+    assert aws_mod.ensure_extra() == aws_mod.EXTRA_CODE_OK
+    assert seen == [[aws_mod.sys.executable, "-m", "pip", "install", aws_mod.EXTRA_REQ_WHEEL]]
+
+
+def test_ensure_extra_reports_install_failed(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.delenv(aws_mod.ENV_PROJECT_DIR, raising=False)
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: False)
+    monkeypatch.setattr(aws_mod, "pip_install_channel_available", lambda: True)
+
+    class _Result:
+        returncode = 1
+        stdout = ""
+        stderr = "nope"
+
+    monkeypatch.setattr(aws_mod.subprocess, "run", lambda *_a, **_k: _Result())
+    assert aws_mod.ensure_extra() == aws_mod.EXTRA_CODE_FAILED
+
+
+def test_bootstrap_installs_extra_when_opted_in(monkeypatch) -> None:
+    from kiro_crew.config.loader import KiroCrewConfig
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import bootstrap
+
+    calls: list[str] = []
+    monkeypatch.setattr(aws_mod, "opted_in", lambda: True)
+    monkeypatch.setattr(aws_mod, "extra_available", lambda: False)
+    monkeypatch.setattr(
+        aws_mod, "ensure_extra", lambda: calls.append("ensure") or aws_mod.EXTRA_CODE_OK
+    )
+    monkeypatch.setattr(aws_mod, "try_aws_agent_identity", lambda: None)
+    monkeypatch.setattr(bootstrap, "plugin_entry_points", lambda: ())
+    monkeypatch.setattr(bootstrap, "resolve_profile", lambda *a, **k: "standalone")
+    bootstrap._reset_boot_state()
+    bootstrap.bootstrap_context(KiroCrewConfig.load())
+    assert calls == ["ensure"]
 
 
 def test_normalize_agentcore_gateway_url() -> None:

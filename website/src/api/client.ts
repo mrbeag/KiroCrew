@@ -344,6 +344,8 @@ export interface AgentcoreIdentityData {
   writable: boolean
   write_blocked?: string | null
   restart_required: boolean
+  extra_installed: boolean
+  extra_code: 'ok' | 'no_install_channel' | 'install_failed' | null
 }
 
 /** Pending 3LO consent after the oauth_endpoints.json allowlist. */
