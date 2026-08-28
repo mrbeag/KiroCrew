@@ -437,7 +437,11 @@ delegates to that same global. Wired sites:
   error on those unattended keys writes the same deny sidecar. 3LO
   consent is `allow_agentcore_consent_url` + owner-only GET
   `/api/agentcore/consent` (SEL `agentcore.consent_url` /
-  `agentcore.unattended_denied`). Default adapter stays empty. The
+  `agentcore.unattended_denied`). Settings catalog / verify / sync is
+  owner-only `GET`/`POST /api/agentcore/gateway` against
+  `platform/agentcore_inspect.py` (control-plane
+  `bedrock-agentcore-control`; data-plane MCP `tools/list` via SigV4
+  on workload+IAM; login skips tools with a sign-in hint). Default adapter stays empty. The
   public `probe_instance_invoke_gateway()` is a no-op False; a companion
   must override it — False is "no mismatch detected", not "IAM inbound
   is impossible."

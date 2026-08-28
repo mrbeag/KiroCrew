@@ -72,17 +72,20 @@ _AGENTCORE_WORKLOAD_ID_WILDCARD_ARN = (
     "workload-identity/kirocrew-*"
 )
 _AGENTCORE_GATEWAY_ARN = "arn:aws:bedrock-agentcore:*:*:gateway/kirocrew-*"
+# Inspect of an operator-pasted existing Gateway (not only kirocrew-*).
+# Invoke stays on ``kirocrew-*``. A bare ``*`` resource is still refused.
+_AGENTCORE_GATEWAY_ANY_ARN = "arn:aws:bedrock-agentcore:*:*:gateway/*"
 _AGENTCORE_WORKLOAD_RESOURCES = [
     _AGENTCORE_WORKLOAD_DIR_ARN,
     _AGENTCORE_WORKLOAD_ID_ARN,
     _AGENTCORE_WORKLOAD_ID_WILDCARD_ARN,
 ]
 _AGENTCORE_LAUNCH_POSTURES = frozenset({"none", "workload", "login"})
-_AGENTCORE_ALL_ACTIONS = [
-    "bedrock-agentcore:GetWorkloadAccessToken",
-    "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
-    "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
-    "bedrock-agentcore:InvokeGateway",
+_AGENTCORE_INSPECT_ACTIONS = [
+    "bedrock-agentcore:GetGateway",
+    "bedrock-agentcore:ListGatewayTargets",
+    "bedrock-agentcore:GetGatewayTarget",
+    "bedrock-agentcore:SynchronizeGatewayTargets",
 ]
 _INSTANCE_POSTURES = frozenset({"workload", "login"})
 
@@ -208,13 +211,15 @@ def agentcore_instance_policy_document(posture: str) -> dict[str, Any]:
     This is the labeled sibling of :func:`policy_document` — paste it onto the
     *instance* role, never the launch principal. A CloudFormation launch
     attaches the same verbs automatically. Resource ARNs are fleet-pinned
-    (workload ``kirocrew`` / ``kirocrew-*``, gateway ``kirocrew-*``) except
-    on explicit Deny SIDs.
+    (workload ``kirocrew`` / ``kirocrew-*``, Invoke on gateway ``kirocrew-*``)
+    except inspect (``gateway/*``, so an existing pasted Gateway is
+    catalogable) and explicit Deny SIDs.
     """
     if posture not in _INSTANCE_POSTURES:
         raise ValueError(
             f"unknown agentcore instance posture: {posture!r}; expected workload or login"
         )
+    inspect = _gateway_inspect_statement()
     if posture == "workload":
         return {
             "Version": "2012-10-17",
@@ -234,6 +239,7 @@ def agentcore_instance_policy_document(posture: str) -> dict[str, Any]:
                     "Action": ["bedrock-agentcore:InvokeGateway"],
                     "Resource": _AGENTCORE_GATEWAY_ARN,
                 },
+                inspect,
                 {
                     "Sid": "DenyJwtPathOnWorkloadPosture",
                     "Effect": "Deny",
@@ -251,6 +257,7 @@ def agentcore_instance_policy_document(posture: str) -> dict[str, Any]:
                 "Action": ["bedrock-agentcore:GetWorkloadAccessTokenForJWT"],
                 "Resource": list(_AGENTCORE_WORKLOAD_RESOURCES),
             },
+            inspect,
             {
                 "Sid": "DenyUserIdAndIamGateway",
                 "Effect": "Deny",
@@ -261,6 +268,21 @@ def agentcore_instance_policy_document(posture: str) -> dict[str, Any]:
                 "Resource": "*",
             },
         ],
+    }
+
+
+def _gateway_inspect_statement() -> dict[str, Any]:
+    """Read + optional Sync on any Gateway the operator pastes.
+
+    Invoke stays on ``kirocrew-*``. Settings catalog needs Get/List/GetTarget
+    on ``gateway/*`` so an existing Gateway URL is inspectable. Sync refreshes
+    a DEFAULT listing-mode target; it is not InvokeGateway.
+    """
+    return {
+        "Sid": "AgentCoreGatewayInspect",
+        "Effect": "Allow",
+        "Action": list(_AGENTCORE_INSPECT_ACTIONS),
+        "Resource": _AGENTCORE_GATEWAY_ANY_ARN,
     }
 
 
@@ -289,8 +311,21 @@ def agentcore_boundary_policy_document(
         {
             "Sid": "AgentCoreUnionCeiling",
             "Effect": "Allow",
-            "Action": list(_AGENTCORE_ALL_ACTIONS),
+            "Action": [
+                "bedrock-agentcore:GetWorkloadAccessToken",
+                "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
+                "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                "bedrock-agentcore:InvokeGateway",
+            ],
             "Resource": list(_AGENTCORE_WORKLOAD_RESOURCES) + [_AGENTCORE_GATEWAY_ARN],
+        }
+    )
+    statements.append(
+        {
+            "Sid": "AgentCoreInspectCeiling",
+            "Effect": "Allow",
+            "Action": list(_AGENTCORE_INSPECT_ACTIONS),
+            "Resource": _AGENTCORE_GATEWAY_ANY_ARN,
         }
     )
     return {"Version": doc["Version"], "Statement": statements}

@@ -522,6 +522,10 @@ companion. A launched box that opted into AgentCore actually vends.
   present; otherwise a URL-only sidecar so kiro-cli can start its
   MCP OAuth challenge (`_kiro.dev/mcp/oauth_request`)
 - `status()` contains no token material
+- Settings catalog: `platform/agentcore_inspect.py` + owner-only
+  `GET`/`POST /api/agentcore/gateway` (verify, targets, tools/list,
+  optional Sync). Instance inspect SID on `gateway/*`. Launcher
+  Policy.json still has no inspect / Invoke verbs.
 - Do **not** register `kirocrew.plugins` (that flips enterprise
   profile / fail-closed)
 

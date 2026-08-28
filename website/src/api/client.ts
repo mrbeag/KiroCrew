@@ -355,6 +355,53 @@ export interface AgentcoreConsentData {
   url: string | null
 }
 
+/** One Settings check on the configured AgentCore Gateway. */
+export interface AgentcoreGatewayCheck {
+  id: string
+  ok: boolean
+  detail: string
+}
+
+/** A Gateway target (MCP server, connector, Lambda, …). */
+export interface AgentcoreGatewayTarget {
+  target_id: string
+  name: string
+  target_type: string
+  status: string
+  listing_mode: string
+  last_synchronized_at: string
+  pending_auth: boolean
+  authorization_url: string | null
+  syncable: boolean
+  status_reasons: string[]
+}
+
+/** Data-plane MCP tools/list, or a skip reason when this page cannot list. */
+export interface AgentcoreGatewayTools {
+  reachable: boolean
+  skip_reason: string | null
+  items: Array<{ name: string; description: string }>
+}
+
+/** GET /api/agentcore/gateway and POST /verify. */
+export interface AgentcoreGatewayData {
+  code: string
+  posture: 'workload' | 'login' | null
+  gateway_url: string
+  gateway: {
+    id: string
+    name: string
+    status: string
+    authorizer_type: string
+    gateway_url: string
+    status_reasons: string[]
+  } | null
+  targets: AgentcoreGatewayTarget[]
+  targets_error: string | null
+  tools: AgentcoreGatewayTools
+  checks: AgentcoreGatewayCheck[]
+}
+
 /** Writable computer-use fields sent to PUT /api/computer-use/config. */
 export interface ComputerUseConfigSave {
   enabled: boolean
@@ -3304,6 +3351,15 @@ export const api = {
   }) => put('/api/agentcore/identity', body).then(j) as Promise<AgentcoreIdentityData>,
   getAgentcoreConsent: () =>
     get('/api/agentcore/consent').then(j) as Promise<AgentcoreConsentData>,
+  getAgentcoreGateway: () =>
+    get('/api/agentcore/gateway').then(j) as Promise<AgentcoreGatewayData>,
+  verifyAgentcoreGateway: () =>
+    post('/api/agentcore/gateway/verify', {}).then(j) as Promise<AgentcoreGatewayData>,
+  syncAgentcoreGatewayTarget: (targetId: string) =>
+    post('/api/agentcore/gateway/sync', { target_id: targetId }).then(j) as Promise<{
+      code: string
+      target_id: string
+    }>,
   getComputerUseConfig: () => get('/api/computer-use/config').then(j) as Promise<ComputerUseConfigData>,
   saveComputerUseConfig: (body: Partial<ComputerUseConfigSave>) =>
     put('/api/computer-use/config', body).then(j) as Promise<ComputerUseConfigData>,

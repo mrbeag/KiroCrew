@@ -45,6 +45,9 @@ vi.mock('../../api/client', () => ({
     getAgentcoreIdentity: vi.fn(),
     saveAgentcoreIdentity: vi.fn(),
     getAgentcoreConsent: vi.fn(),
+    getAgentcoreGateway: vi.fn(),
+    verifyAgentcoreGateway: vi.fn(),
+    syncAgentcoreGatewayTarget: vi.fn(),
     listTrustedApps: vi.fn(),
     trustApp: vi.fn(),
     untrustApp: vi.fn(),
@@ -142,10 +145,27 @@ const IDENTITY_UNSET = {
 
 const CONSENT_IDLE = { pending: false, url: null } as const
 
+const CATALOG_IDLE = {
+  code: 'no_url',
+  posture: null,
+  gateway_url: '',
+  gateway: null,
+  targets: [],
+  targets_error: null,
+  tools: { reachable: false, skip_reason: 'no_url', items: [] },
+  checks: [],
+}
+
 beforeEach(() => {
   ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue(IDENTITY_UNSET)
   ;(api.saveAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue(IDENTITY_UNSET)
   ;(api.getAgentcoreConsent as ReturnType<typeof vi.fn>).mockResolvedValue(CONSENT_IDLE)
+  ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_IDLE)
+  ;(api.verifyAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_IDLE)
+  ;(api.syncAgentcoreGatewayTarget as ReturnType<typeof vi.fn>).mockResolvedValue({
+    code: 'accepted',
+    target_id: 't1',
+  })
 })
 
 function snapshot(overrides: Partial<DeniedCommandsData> = {}): DeniedCommandsData {
@@ -1860,6 +1880,8 @@ describe('SecurityPanel — agent identity', () => {
     ;(api.tailnetStatus as ReturnType<typeof vi.fn>).mockResolvedValue(TAILNET_OFF)
     ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue(IDENTITY_UNSET)
     ;(api.getAgentcoreConsent as ReturnType<typeof vi.fn>).mockResolvedValue(CONSENT_IDLE)
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_IDLE)
+    ;(api.verifyAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(CATALOG_IDLE)
   })
 
   it('saves a workload posture for this crew', async () => {
@@ -1978,5 +2000,56 @@ describe('SecurityPanel — agent identity', () => {
     expect(
       await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_extra_missing_channel')),
     ).toBeInTheDocument()
+  })
+
+  it('lists Gateway tools and verifies the connection', async () => {
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      extra_installed: true,
+      extra_code: 'ok',
+    })
+    const catalog = {
+      code: 'ok',
+      posture: 'workload' as const,
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      gateway: {
+        id: 'demo-gw',
+        name: 'demo',
+        status: 'READY',
+        authorizer_type: 'AWS_IAM',
+        gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+        status_reasons: [],
+      },
+      targets: [
+        {
+          target_id: 't1',
+          name: 'docs',
+          target_type: 'MCP_SERVER',
+          status: 'READY',
+          listing_mode: 'DEFAULT',
+          last_synchronized_at: '2026-08-01T00:00:00Z',
+          pending_auth: false,
+          authorization_url: null,
+          syncable: true,
+          status_reasons: [],
+        },
+      ],
+      targets_error: null,
+      tools: { reachable: true, skip_reason: null, items: [{ name: 'search', description: 'find things' }] },
+      checks: [{ id: 'ready', ok: true, detail: 'READY' }],
+    }
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(catalog)
+    ;(api.verifyAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue(catalog)
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+
+    expect(await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_catalog'))).toBeInTheDocument()
+    expect(await screen.findByText('docs')).toBeInTheDocument()
+    expect(await screen.findByText('search')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_verify') }))
+    await waitFor(() => expect(api.verifyAgentcoreGateway).toHaveBeenCalled())
   })
 })

@@ -183,7 +183,11 @@ workload user/OBO without a vaulted owner token writes a deny sidecar so
 outranks the agent-file entry. 3LO consent URLs are allowlisted through
 `security.allow_agentcore_consent_url` (the same `oauth_endpoints.json`
 keystone) and surfaced only on GET `/api/agentcore/consent`, never as
-model-visible text.
+model-visible text. Settings can list the Gateway's targets and the
+data-plane tool catalog (`GET`/`POST /api/agentcore/gateway`) so an
+operator can verify inbound auth, PENDING_AUTH, and a stale DEFAULT
+listing without opening the AWS console. `ListOauth2CredentialProviders`
+is not on that pane.
 
 - `build_agent_config()` withholds the entry **and pops one arriving from the
   user override file** — a platform gate exists because there is no driver on

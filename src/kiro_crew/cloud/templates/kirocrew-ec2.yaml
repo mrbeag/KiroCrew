@@ -260,6 +260,14 @@ Resources:
             Effect: Allow
             Action: [bedrock-agentcore:InvokeGateway]
             Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/kirocrew-*"
+          - Sid: AgentCoreGatewayInspect
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:GetGateway
+              - bedrock-agentcore:ListGatewayTargets
+              - bedrock-agentcore:GetGatewayTarget
+              - bedrock-agentcore:SynchronizeGatewayTargets
+            Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*"
           - Sid: DenyJwtPathOnWorkloadPosture
             Effect: Deny
             Action: bedrock-agentcore:GetWorkloadAccessTokenForJWT
@@ -280,6 +288,14 @@ Resources:
             Resource:
               - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default"
               - !GetAtt CrewWorkloadIdentity.WorkloadIdentityArn
+          - Sid: AgentCoreGatewayInspect
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:GetGateway
+              - bedrock-agentcore:ListGatewayTargets
+              - bedrock-agentcore:GetGatewayTarget
+              - bedrock-agentcore:SynchronizeGatewayTargets
+            Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*"
           - Sid: DenyUserIdAndIamGateway
             Effect: Deny
             Action:

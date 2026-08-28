@@ -126,6 +126,9 @@ def test_launcher_policy_json_has_no_invoke_gateway() -> None:
     text = iam.policy_json()
     assert "InvokeGateway" not in text
     assert "GetWorkloadAccessToken" not in text
+    assert "GetGateway" not in text
+    assert "ListGatewayTargets" not in text
+    assert "SynchronizeGatewayTargets" not in text
 
 
 def test_launcher_policy_can_create_agentcore_identity() -> None:
@@ -187,6 +190,16 @@ def test_workload_instance_document_denies_for_jwt() -> None:
     assert _actions(deny) == {"bedrock-agentcore:GetWorkloadAccessTokenForJWT"}
     assert _resources(deny) == ["*"]
 
+    inspect = _statement_by_sid(doc, "AgentCoreGatewayInspect")
+    assert inspect["Effect"] == "Allow"
+    assert _actions(inspect) == {
+        "bedrock-agentcore:GetGateway",
+        "bedrock-agentcore:ListGatewayTargets",
+        "bedrock-agentcore:GetGatewayTarget",
+        "bedrock-agentcore:SynchronizeGatewayTargets",
+    }
+    assert _resources(inspect) == ["arn:aws:bedrock-agentcore:*:*:gateway/*"]
+
     for st in doc["Statement"]:
         if st["Effect"] == "Allow":
             assert "*" not in _resources(st)
@@ -206,6 +219,11 @@ def test_login_instance_document_denies_userid_and_invoke() -> None:
         "bedrock-agentcore:InvokeGateway",
     }
     assert _resources(deny) == ["*"]
+
+    inspect = _statement_by_sid(doc, "AgentCoreGatewayInspect")
+    assert inspect["Effect"] == "Allow"
+    assert "bedrock-agentcore:GetGateway" in _actions(inspect)
+    assert _resources(inspect) == ["arn:aws:bedrock-agentcore:*:*:gateway/*"]
 
     dumped = json.dumps(doc)
     assert "GetWorkloadAccessTokenForUserId" in dumped
@@ -245,8 +263,13 @@ def test_successor_boundary_is_union_ceiling() -> None:
             "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
             "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
             "bedrock-agentcore:InvokeGateway",
+            "bedrock-agentcore:GetGateway",
+            "bedrock-agentcore:ListGatewayTargets",
+            "bedrock-agentcore:SynchronizeGatewayTargets",
         ):
             assert action in dumped
+        inspect = _statement_by_sid(doc, "AgentCoreInspectCeiling")
+        assert _resources(inspect) == ["arn:aws:bedrock-agentcore:*:*:gateway/*"]
         s3 = _statement_by_sid(doc, "SourceBucketRead")
         assert s3["Resource"] == "arn:aws:s3:::kirocrew-src-123456789012-*/*"
 
@@ -266,6 +289,16 @@ def test_template_allowed_pattern_lists_both_boundary_names() -> None:
     assert "kirocrew-ec2-boundary(-agentcore)?" in text or (
         "kirocrew-ec2-boundary" in text and "agentcore" in text
     )
+
+
+def test_template_instance_policies_include_inspect() -> None:
+    from kiro_crew.cloud import ec2
+
+    text = ec2.load_template()
+    assert text.count("AgentCoreGatewayInspect") >= 2
+    assert "bedrock-agentcore:GetGateway" in text
+    assert "bedrock-agentcore:SynchronizeGatewayTargets" in text
+    assert "gateway/*" in text
 
 
 def test_login_rebuild_withholds_kiro_global(

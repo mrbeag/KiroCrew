@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, ShieldAlert, Lock, Eye, EyeOff, FileWarning, Terminal, Globe, Fingerprint, KeyRound, ScanLine, Layers, AlertTriangle, CheckCircle2, Circle, Clock, ExternalLink, ChevronRight, ChevronDown, Plus, Trash2, Gavel, Building2, Gauge, ToggleRight, MessageSquare, ListChecks, Boxes, BookOpen, Network, Copy, Check, Package, IdCard } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, Lock, Eye, EyeOff, FileWarning, Terminal, Globe, Fingerprint, KeyRound, ScanLine, Layers, AlertTriangle, CheckCircle2, Circle, Clock, ExternalLink, ChevronRight, ChevronDown, Plus, Trash2, Gavel, Building2, Gauge, ToggleRight, MessageSquare, ListChecks, Boxes, BookOpen, Network, Copy, Check, Package, IdCard, RefreshCw, Wrench, Plug } from 'lucide-react'
 import { useAppSelector } from '../../store'
 import { SettingsSubNav } from '../../components/SettingsSubNav'
 import { useImeGuard } from '../../hooks/useImeGuard'
@@ -8,12 +8,12 @@ import { Badge, Btn, Input, Toggle, Checkbox } from '../../components/ui'
 import { SettingsSection, SettingsCard, SettingsToggle } from '../../components/settings'
 import Modal from '../../components/Modal'
 import InfoTip from '../../components/InfoTip'
-import { api, ApiError, type DeniedCommandsData, type DeniedCommandRule, type DeniedUserRule, type GovernancePolicyData, type GovernanceScope, type GovernanceScopeDetail, type SecurityPostureData, type TailnetStatusData, type TrustedAppsData, type AgentcoreIdentityData, type AgentcoreConsentData } from '../../api/client'
+import { api, ApiError, type DeniedCommandsData, type DeniedCommandRule, type DeniedUserRule, type GovernancePolicyData, type GovernanceScope, type GovernanceScopeDetail, type SecurityPostureData, type TailnetStatusData, type TrustedAppsData, type AgentcoreIdentityData, type AgentcoreConsentData, type AgentcoreGatewayData, type AgentcoreGatewayCheck, type AgentcoreGatewayTarget } from '../../api/client'
 import { PostureDisclosureRow, CODE_BASE as POSTURE_CODE_BASE } from './PostureDisclosure'
 import { MobileLoginCard } from './MobileLoginCard'
 
 import { i18nT } from '../../i18n/t'
-import { fmtDateFields, fmtList, fmtTime, fmtTimeNumeric, toDate, compareText } from '../../i18n/format'
+import { fmtDateFields, fmtDateTime, fmtList, fmtNumber, fmtTime, fmtTimeNumeric, toDate, compareText } from '../../i18n/format'
 import ErrorNotice from '../../components/ErrorNotice'
 /* ── Security feature registry ──
  *
@@ -1997,6 +1997,334 @@ const IDENTITY_POSTURE_KEY: Record<string, string> = {
   login: 'pages.settings.securityPanel.agent_identity_posture_login',
 }
 
+const CATALOG_CHECK_LABEL: Record<string, string> = {
+  url: 'pages.settings.securityPanel.agent_identity_check_url',
+  extra: 'pages.settings.securityPanel.agent_identity_check_extra',
+  reachable: 'pages.settings.securityPanel.agent_identity_check_reachable',
+  ready: 'pages.settings.securityPanel.agent_identity_check_ready',
+  authorizer: 'pages.settings.securityPanel.agent_identity_check_authorizer',
+  url_match: 'pages.settings.securityPanel.agent_identity_check_url_match',
+  invoke_scope: 'pages.settings.securityPanel.agent_identity_check_invoke_scope',
+  tools: 'pages.settings.securityPanel.agent_identity_check_tools',
+}
+
+const CATALOG_CODE_HINT: Record<string, string> = {
+  no_url: 'pages.settings.securityPanel.agent_identity_code_no_url',
+  extra_missing: 'pages.settings.securityPanel.agent_identity_code_extra_missing',
+  unusable_url: 'pages.settings.securityPanel.agent_identity_code_unusable_url',
+  aws_denied: 'pages.settings.securityPanel.agent_identity_code_aws_denied',
+  not_found: 'pages.settings.securityPanel.agent_identity_code_not_found',
+  aws_error: 'pages.settings.securityPanel.agent_identity_code_aws_error',
+}
+
+const TARGET_TYPE_LABEL: Record<string, string> = {
+  MCP_SERVER: 'pages.settings.securityPanel.agent_identity_type_mcp',
+  MCP: 'pages.settings.securityPanel.agent_identity_type_mcp',
+  CONNECTOR: 'pages.settings.securityPanel.agent_identity_type_connector',
+  HTTP_CONNECTOR: 'pages.settings.securityPanel.agent_identity_type_http',
+  LAMBDA: 'pages.settings.securityPanel.agent_identity_type_lambda',
+  OPEN_API_SCHEMA: 'pages.settings.securityPanel.agent_identity_type_openapi',
+  SMITHY_MODEL: 'pages.settings.securityPanel.agent_identity_type_smithy',
+  API_GATEWAY: 'pages.settings.securityPanel.agent_identity_type_apigw',
+  PROVIDER: 'pages.settings.securityPanel.agent_identity_type_provider',
+  AGENTCORE_RUNTIME: 'pages.settings.securityPanel.agent_identity_type_runtime',
+  PASSTHROUGH: 'pages.settings.securityPanel.agent_identity_type_passthrough',
+}
+
+function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
+  if (!data) return null
+  if (data.code !== 'ok' && CATALOG_CODE_HINT[data.code]) {
+    return i18nT(CATALOG_CODE_HINT[data.code])
+  }
+  const authorizer = data.checks.find(c => c.id === 'authorizer')
+  if (authorizer && !authorizer.ok) {
+    return i18nT('pages.settings.securityPanel.agent_identity_mismatch_authorizer')
+  }
+  if (data.tools.skip_reason === 'login_needs_sign_in') {
+    return i18nT('pages.settings.securityPanel.agent_identity_tools_skipped_login')
+  }
+  return null
+}
+
+function CheckRow({ check }: { check: AgentcoreGatewayCheck }) {
+  const labelKey = CATALOG_CHECK_LABEL[check.id]
+  const Icon = check.ok ? CheckCircle2 : AlertTriangle
+  return (
+    <li className="flex items-start gap-2 text-[12px]">
+      <Icon
+        className={`lucide-inline mt-0.5 shrink-0 ${check.ok ? 'text-ok' : 'text-warn'}`}
+        aria-hidden
+      />
+      <span className="text-text">
+        {labelKey ? i18nT(labelKey) : check.id}
+        {!check.ok && check.detail && check.detail !== 'ok' ? (
+          <span className="text-muted"> · {check.detail}</span>
+        ) : null}
+      </span>
+    </li>
+  )
+}
+
+function TargetRow({
+  target,
+  onSync,
+  syncing,
+}: {
+  target: AgentcoreGatewayTarget
+  onSync: (id: string) => void
+  syncing: boolean
+}) {
+  const typeKey = TARGET_TYPE_LABEL[target.target_type]
+  const synced = target.last_synchronized_at
+    ? fmtDateTime(target.last_synchronized_at)
+    : i18nT('pages.settings.securityPanel.agent_identity_never_synced')
+  const mode =
+    target.listing_mode === 'DYNAMIC'
+      ? i18nT('pages.settings.securityPanel.agent_identity_listing_dynamic')
+      : target.listing_mode === 'DEFAULT'
+        ? i18nT('pages.settings.securityPanel.agent_identity_listing_default')
+        : target.listing_mode
+  const authHref =
+    typeof target.authorization_url === 'string' && target.authorization_url.startsWith('https://')
+      ? target.authorization_url
+      : null
+  return (
+    <tr className="border-t border-border align-top">
+      <td className="py-2 pr-3 text-[12px] text-text">
+        <div className="font-medium">{target.name || target.target_id}</div>
+        {target.name && target.target_id ? (
+          <code className="font-mono text-[11px] text-muted">{target.target_id}</code>
+        ) : null}
+      </td>
+      <td className="py-2 pr-3 text-[12px] text-muted">
+        {typeKey ? i18nT(typeKey) : target.target_type || '—'}
+      </td>
+      <td className="py-2 pr-3 text-[12px] text-text">
+        <span className="font-mono text-[11px]">{target.status || '—'}</span>
+        {target.pending_auth ? (
+          <div className="text-warn mt-1">
+            {i18nT('pages.settings.securityPanel.agent_identity_pending_auth')}
+          </div>
+        ) : null}
+      </td>
+      <td className="py-2 pr-3 text-[12px] text-muted">{mode || '—'}</td>
+      <td className="py-2 pr-3 text-[12px] text-muted">{synced}</td>
+      <td className="py-2 text-[12px]">
+        {authHref ? (
+          <a
+            href={authHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-accent hover:underline"
+          >
+            <ExternalLink className="lucide-inline" />
+            {i18nT('pages.settings.securityPanel.agent_identity_consent_open')}
+          </a>
+        ) : null}
+        {target.syncable ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-accent hover:underline disabled:opacity-50"
+            disabled={syncing}
+            onClick={() => onSync(target.target_id)}
+          >
+            <RefreshCw className={`lucide-inline ${syncing ? 'animate-spin' : ''}`} />
+            {syncing
+              ? i18nT('pages.settings.securityPanel.agent_identity_syncing')
+              : i18nT('pages.settings.securityPanel.agent_identity_sync')}
+          </button>
+        ) : null}
+      </td>
+    </tr>
+  )
+}
+
+function GatewayCatalogCard() {
+  const queryClient = useQueryClient()
+  const [copied, setCopied] = useState(false)
+  const catalog = useQuery<AgentcoreGatewayData>({
+    queryKey: ['agentcore-gateway'],
+    queryFn: api.getAgentcoreGateway,
+  })
+  const verify = useMutation({
+    mutationFn: api.verifyAgentcoreGateway,
+    onSuccess: next => {
+      queryClient.setQueryData(['agentcore-gateway'], next)
+    },
+  })
+  const sync = useMutation({
+    mutationFn: (targetId: string) => api.syncAgentcoreGatewayTarget(targetId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['agentcore-gateway'] })
+    },
+  })
+  const data = catalog.data
+  const hint = catalogHint(data)
+  const tools = data?.tools.items ?? []
+  const busy = catalog.isFetching || verify.isPending
+  const debugBlob = data
+    ? JSON.stringify(
+        {
+          code: data.code,
+          posture: data.posture,
+          gateway: data.gateway,
+          checks: data.checks,
+          targets: data.targets.map(t => ({
+            target_id: t.target_id,
+            name: t.name,
+            target_type: t.target_type,
+            status: t.status,
+            listing_mode: t.listing_mode,
+            pending_auth: t.pending_auth,
+            syncable: t.syncable,
+          })),
+          tools: { reachable: data.tools.reachable, skip_reason: data.tools.skip_reason, count: tools.length },
+        },
+        null,
+        2,
+      )
+    : ''
+
+  return (
+    <div className="rounded-md border border-border bg-bg-elevated p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          <p className="text-[13px] text-text flex items-center gap-1.5">
+            <Plug className="lucide-inline" />
+            {i18nT('pages.settings.securityPanel.agent_identity_catalog')}
+          </p>
+          <p className="text-[12px] text-muted leading-relaxed">
+            {i18nT('pages.settings.securityPanel.agent_identity_catalog_hint')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Btn
+            disabled={busy}
+            onClick={() => verify.mutate()}
+            aria-label={i18nT('pages.settings.securityPanel.agent_identity_verify')}
+          >
+            <RefreshCw className={`lucide-inline ${busy ? 'animate-spin' : ''}`} />
+            {busy
+              ? i18nT('pages.settings.securityPanel.agent_identity_verifying')
+              : i18nT('pages.settings.securityPanel.agent_identity_verify')}
+          </Btn>
+        </div>
+      </div>
+      {catalog.isError ? (
+        <ErrorNotice
+          message={catalog.error instanceof Error ? catalog.error.message : String(catalog.error)}
+        />
+      ) : null}
+      {verify.isError ? (
+        <ErrorNotice
+          message={verify.error instanceof Error ? verify.error.message : String(verify.error)}
+        />
+      ) : null}
+      {sync.isError ? (
+        <ErrorNotice
+          message={sync.error instanceof Error ? sync.error.message : String(sync.error)}
+        />
+      ) : null}
+      {sync.isSuccess ? (
+        <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_sync_ok')}</p>
+      ) : null}
+      {hint ? <p className="text-[12px] text-warn leading-relaxed">{hint}</p> : null}
+      {data?.gateway?.name || data?.gateway?.id ? (
+        <div className="text-[13px] text-text">
+          <span className="text-muted">{i18nT('pages.settings.securityPanel.agent_identity_gateway_name')} </span>
+          {data.gateway.name || data.gateway.id}
+          {data.gateway.status ? (
+            <code className="ml-2 font-mono text-[11px] text-muted">{data.gateway.status}</code>
+          ) : null}
+        </div>
+      ) : null}
+      {data?.checks.length ? (
+        <ul className="space-y-1.5" aria-label={i18nT('pages.settings.securityPanel.agent_identity_checks')}>
+          {data.checks.map(check => (
+            <CheckRow key={check.id} check={check} />
+          ))}
+        </ul>
+      ) : catalog.isLoading ? (
+        <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.loading_governance_policy')}</p>
+      ) : null}
+
+      <div className="space-y-2">
+        <p className="text-[13px] text-text">{i18nT('pages.settings.securityPanel.agent_identity_targets')}</p>
+        {data && data.targets.length === 0 ? (
+          <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_targets_empty')}</p>
+        ) : data?.targets.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-muted">
+                  <th className="pb-1 pr-3 font-medium">{i18nT('pages.settings.securityPanel.agent_identity_target_name')}</th>
+                  <th className="pb-1 pr-3 font-medium">{i18nT('pages.settings.securityPanel.agent_identity_target_type')}</th>
+                  <th className="pb-1 pr-3 font-medium">{i18nT('pages.settings.securityPanel.agent_identity_target_status')}</th>
+                  <th className="pb-1 pr-3 font-medium">{i18nT('pages.settings.securityPanel.agent_identity_target_mode')}</th>
+                  <th className="pb-1 pr-3 font-medium">{i18nT('pages.settings.securityPanel.agent_identity_target_synced')}</th>
+                  <th className="pb-1 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {data.targets.map(target => (
+                  <TargetRow
+                    key={target.target_id || target.name}
+                    target={target}
+                    onSync={id => sync.mutate(id)}
+                    syncing={sync.isPending && sync.variables === target.target_id}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[13px] text-text flex items-center gap-1.5">
+          <Wrench className="lucide-inline" />
+          {i18nT('pages.settings.securityPanel.agent_identity_tools')}
+          {tools.length > 0 ? (
+            <span className="text-muted font-normal">({fmtNumber(tools.length)})</span>
+          ) : null}
+        </p>
+        {tools.length === 0 ? (
+          <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_tools_empty')}</p>
+        ) : (
+          <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+            {tools.map(tool => (
+              <li key={tool.name} className="text-[12px]">
+                <code className="font-mono text-text">{tool.name}</code>
+                {tool.description ? (
+                  <span className="text-muted"> — {tool.description}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {debugBlob ? (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 text-[12px] text-muted hover:text-text"
+          onClick={() => {
+            void navigator.clipboard.writeText(debugBlob).then(() => {
+              setCopied(true)
+              window.setTimeout(() => setCopied(false), 1500)
+            })
+          }}
+        >
+          {copied ? <Check className="lucide-inline" /> : <Copy className="lucide-inline" />}
+          {copied
+            ? i18nT('pages.settings.securityPanel.agent_identity_copied')
+            : i18nT('pages.settings.securityPanel.agent_identity_copy_debug')}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function AgentIdentitySection() {
   const queryClient = useQueryClient()
   const { data, isLoading, isError, error } = useQuery<AgentcoreIdentityData>({
@@ -2131,6 +2459,7 @@ function AgentIdentitySection() {
                     : i18nT('pages.settings.securityPanel.agent_identity_save')}
                 </Btn>
               </div>
+              {data?.configured && data.gateway_url ? <GatewayCatalogCard /> : null}
             </div>
           )}
         </div>

@@ -291,7 +291,12 @@ in the same CloudFormation stack that creates the instance.
   creates the AWS identity at deploy time. See-and-configure
   lives on **that crew's** Settings → Security → Agent identity
   (`GET`/`PUT /api/agentcore/identity`), not on the hub's Remote
-  Crew launcher. A fleet override or signed policy is refused.
+  Crew launcher. The same pane verifies the Gateway, lists targets
+  and the data-plane tool catalog, and can Sync a DEFAULT target
+  (`GET`/`POST /api/agentcore/gateway`, owner-only). Instance IAM
+  grants inspect on `gateway/*`; Invoke stays on `kirocrew-*`.
+  `ListOauth2CredentialProviders` is not on this pane. A fleet
+  override or signed policy is refused.
 - Stack delete removes the identity. The launcher Policy.json
   grows `CreateWorkloadIdentity` / `DeleteWorkloadIdentity` /
   `GetWorkloadIdentity` / tag verbs, still scoped to

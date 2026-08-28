@@ -1,0 +1,598 @@
+"""Read-only AgentCore Gateway catalog for Settings debug.
+
+Control plane (lazy ``bedrock-agentcore-control``): GetGateway,
+ListGatewayTargets, GetGatewayTarget, SynchronizeGatewayTargets.
+
+Data plane: MCP ``tools/list`` signed with the existing SigV4 helper
+on workload + IAM inbound. Login without a user JWT skips tools with a
+hint — this page cannot borrow a chat session. A WAT is never a Gateway
+bearer and never appears in the snapshot.
+
+``ListOauth2CredentialProviders`` is account-wide Identity directory
+and is not on this surface.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import urllib.error
+import urllib.request
+from typing import Any
+from urllib.parse import urlparse
+
+from kiro_crew.platform.agentcore_aws import (
+    extra_available,
+    resolved_gateway_url,
+    resolved_posture,
+)
+from kiro_crew.platform.agentcore_sigv4 import sign_aws_request
+
+logger = logging.getLogger(__name__)
+
+CONTROL_CLIENT = "bedrock-agentcore-control"
+GATEWAY_HOST_MARKER = ".gateway.bedrock-agentcore."
+SNAPSHOT_OK = "ok"
+SNAPSHOT_NO_URL = "no_url"
+SNAPSHOT_EXTRA_MISSING = "extra_missing"
+SNAPSHOT_UNUSABLE_URL = "unusable_url"
+SNAPSHOT_AWS_DENIED = "aws_denied"
+SNAPSHOT_NOT_FOUND = "not_found"
+SNAPSHOT_AWS_ERROR = "aws_error"
+TOOLS_SKIP_LOGIN = "login_needs_sign_in"
+TOOLS_SKIP_MISMATCH = "authorizer_mismatch"
+TOOLS_SKIP_UNREACHABLE = "tools_unreachable"
+TOOLS_DENIED = "tools_denied"
+AUTHORIZER_IAM = "AWS_IAM"
+AUTHORIZER_JWT = "CUSTOM_JWT"
+GATEWAY_READY = "READY"
+LISTING_DEFAULT = "DEFAULT"
+LISTING_DYNAMIC = "DYNAMIC"
+INVOKE_ARN_PREFIX = "kirocrew-"
+TARGET_DETAIL_MAX = 40
+LIST_PAGE_MAX = 50
+LIST_PAGES_MAX = 4
+TOOLS_LIST_MAX = 200
+TOOLS_LIST_TIMEOUT_SECS = 20.0
+MCP_PROTOCOL_VERSION = "2024-11-05"
+MCP_CLIENT_NAME = "kirocrew-inspect"
+SYNC_TARGET_ID_MAX = 128
+_PENDING_AUTH_STATUSES = frozenset(
+    {
+        "CREATE_PENDING_AUTH",
+        "UPDATE_PENDING_AUTH",
+        "SYNCHRONIZE_PENDING_AUTH",
+    }
+)
+_SYNCABLE_STATUSES = frozenset(
+    {
+        "READY",
+        "SYNCHRONIZE_UNSUCCESSFUL",
+        "UPDATE_UNSUCCESSFUL",
+        "SYNCHRONIZING",
+    }
+)
+_FORBIDDEN_STATUS_KEYS = frozenset(
+    {"token", "secret", "bearer", "authorization", "password", "jwt"}
+)
+
+
+def parse_gateway_ref(url: str) -> dict[str, str] | None:
+    """Return ``{id, region, host}`` from a Gateway MCP URL, or None."""
+    parsed = urlparse((url or "").strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not host:
+        return None
+    marker_at = host.find(GATEWAY_HOST_MARKER)
+    if marker_at <= 0:
+        return None
+    gateway_id = host[:marker_at]
+    rest = host[marker_at + len(GATEWAY_HOST_MARKER) :]
+    region = rest.split(".", 1)[0]
+    if not gateway_id or not region:
+        return None
+    return {"id": gateway_id, "region": region, "host": host}
+
+
+def inspect_snapshot(*, include_tools: bool = True) -> dict[str, Any]:
+    """Live catalog + checks. Never raises; codes are the operator contract."""
+    url = resolved_gateway_url()
+    posture = resolved_posture()
+    if not url:
+        return _empty_snapshot(SNAPSHOT_NO_URL, posture=posture)
+    if not extra_available():
+        return _empty_snapshot(SNAPSHOT_EXTRA_MISSING, posture=posture, url=url)
+    ref = parse_gateway_ref(url)
+    if ref is None:
+        return _empty_snapshot(SNAPSHOT_UNUSABLE_URL, posture=posture, url=url)
+
+    client = _control_client(ref["region"])
+    if client is None:
+        return _empty_snapshot(SNAPSHOT_EXTRA_MISSING, posture=posture, url=url)
+
+    try:
+        raw_gateway = client.get_gateway(gatewayIdentifier=ref["id"])
+    except Exception as exc:
+        code = _classify_aws_error(exc)
+        logger.warning("GetGateway failed (%s)", code, exc_info=True)
+        return _empty_snapshot(code, posture=posture, url=url, gateway_id=ref["id"])
+
+    gateway = _gateway_view(raw_gateway, ref)
+    targets, targets_error = _list_targets(client, ref["id"])
+    checks = _build_checks(
+        url=url,
+        ref=ref,
+        posture=posture,
+        gateway=gateway,
+        extra=True,
+    )
+    tools = _empty_tools(TOOLS_SKIP_UNREACHABLE)
+    if include_tools:
+        tools = _list_tools(
+            url=url,
+            region=ref["region"],
+            posture=posture,
+            authorizer=str(gateway.get("authorizer_type") or ""),
+        )
+        checks.append(_tools_check(tools))
+    return _scrub(
+        {
+            "code": SNAPSHOT_OK,
+            "posture": posture or None,
+            "gateway_url": url,
+            "gateway": gateway,
+            "targets": targets,
+            "targets_error": targets_error,
+            "tools": tools,
+            "checks": checks,
+        }
+    )
+
+
+def synchronize_target(target_id: str) -> dict[str, Any]:
+    """Ask the Gateway to refresh one DEFAULT target's cached catalog.
+
+    Returns ``{code, target_id}``. Does not wait for SYNCHRONIZING to finish.
+    """
+    cleaned = (target_id or "").strip()
+    if not cleaned or len(cleaned) > SYNC_TARGET_ID_MAX:
+        return {"code": "invalid_target", "target_id": cleaned}
+    url = resolved_gateway_url()
+    if not url:
+        return {"code": SNAPSHOT_NO_URL, "target_id": cleaned}
+    if not extra_available():
+        return {"code": SNAPSHOT_EXTRA_MISSING, "target_id": cleaned}
+    ref = parse_gateway_ref(url)
+    if ref is None:
+        return {"code": SNAPSHOT_UNUSABLE_URL, "target_id": cleaned}
+    client = _control_client(ref["region"])
+    if client is None:
+        return {"code": SNAPSHOT_EXTRA_MISSING, "target_id": cleaned}
+    try:
+        client.synchronize_gateway_targets(gatewayIdentifier=ref["id"], targetIdList=[cleaned])
+    except Exception as exc:
+        code = _classify_aws_error(exc)
+        logger.warning("SynchronizeGatewayTargets failed (%s)", code, exc_info=True)
+        return {"code": code, "target_id": cleaned}
+    return {"code": "accepted", "target_id": cleaned}
+
+
+def _empty_snapshot(
+    code: str,
+    *,
+    posture: str = "",
+    url: str = "",
+    gateway_id: str = "",
+) -> dict[str, Any]:
+    checks = [
+        {"id": "url", "ok": bool(url), "detail": code if not url else "ok"},
+        {"id": "extra", "ok": extra_available(), "detail": code},
+        {"id": "reachable", "ok": False, "detail": code},
+        {"id": "ready", "ok": False, "detail": code},
+        {"id": "authorizer", "ok": False, "detail": code},
+        {"id": "url_match", "ok": False, "detail": code},
+        {"id": "invoke_scope", "ok": False, "detail": code},
+        {"id": "tools", "ok": False, "detail": code},
+    ]
+    gateway: dict[str, Any] | None = None
+    if gateway_id:
+        gateway = {
+            "id": gateway_id,
+            "name": "",
+            "status": "",
+            "authorizer_type": "",
+            "gateway_url": "",
+            "status_reasons": [],
+        }
+    return _scrub(
+        {
+            "code": code,
+            "posture": posture or None,
+            "gateway_url": url,
+            "gateway": gateway,
+            "targets": [],
+            "targets_error": None if code == SNAPSHOT_NO_URL else code,
+            "tools": _empty_tools(code),
+            "checks": checks,
+        }
+    )
+
+
+def _empty_tools(skip: str) -> dict[str, Any]:
+    return {"reachable": False, "skip_reason": skip, "items": []}
+
+
+def _control_client(region: str) -> Any | None:
+    try:
+        import boto3
+    except ImportError:
+        return None
+    kwargs: dict[str, str] = {}
+    if region:
+        kwargs["region_name"] = region
+    return boto3.client(CONTROL_CLIENT, **kwargs)
+
+
+def _classify_aws_error(exc: BaseException) -> str:
+    name = type(exc).__name__
+    code = ""
+    raw = getattr(exc, "response", None)
+    if isinstance(raw, dict):
+        err = raw.get("Error")
+        if isinstance(err, dict):
+            code = str(err.get("Code") or "")
+    blob = f"{name} {code} {exc}".lower()
+    if "accessdenied" in blob or "unauthorized" in blob or "forbidden" in blob:
+        return SNAPSHOT_AWS_DENIED
+    if "resourcenotfound" in blob or "notfound" in blob:
+        return SNAPSHOT_NOT_FOUND
+    return SNAPSHOT_AWS_ERROR
+
+
+def _gateway_view(raw: Any, ref: dict[str, str]) -> dict[str, Any]:
+    data = raw if isinstance(raw, dict) else {}
+    reasons = data.get("statusReasons") or data.get("status_reasons") or []
+    if not isinstance(reasons, list):
+        reasons = [str(reasons)]
+    return {
+        "id": str(data.get("gatewayId") or data.get("gatewayIdentifier") or ref["id"]),
+        "name": str(data.get("name") or ""),
+        "status": str(data.get("status") or ""),
+        "authorizer_type": str(data.get("authorizerType") or data.get("authorizer_type") or ""),
+        "gateway_url": str(data.get("gatewayUrl") or data.get("gateway_url") or ""),
+        "status_reasons": [str(item) for item in reasons if item],
+    }
+
+
+def _list_targets(client: Any, gateway_id: str) -> tuple[list[dict[str, Any]], str | None]:
+    items: list[dict[str, Any]] = []
+    token: str | None = None
+    try:
+        for _ in range(LIST_PAGES_MAX):
+            kwargs: dict[str, Any] = {
+                "gatewayIdentifier": gateway_id,
+                "maxResults": LIST_PAGE_MAX,
+            }
+            if token:
+                kwargs["nextToken"] = token
+            resp = client.list_gateway_targets(**kwargs)
+            raw_items = resp.get("items") if isinstance(resp, dict) else None
+            if raw_items is None and isinstance(resp, dict):
+                raw_items = resp.get("targets")
+            if not isinstance(raw_items, list):
+                raw_items = []
+            for raw in raw_items:
+                if isinstance(raw, dict):
+                    items.append(_target_stub(raw))
+            token = resp.get("nextToken") if isinstance(resp, dict) else None
+            if not token:
+                break
+    except Exception as exc:
+        code = _classify_aws_error(exc)
+        logger.warning("ListGatewayTargets failed (%s)", code, exc_info=True)
+        return items, code
+
+    for stub in items[:TARGET_DETAIL_MAX]:
+        target_id = str(stub.get("target_id") or "")
+        if not target_id:
+            continue
+        try:
+            detail = client.get_gateway_target(gatewayIdentifier=gateway_id, targetId=target_id)
+        except Exception:
+            logger.debug("GetGatewayTarget failed for %s", target_id, exc_info=True)
+            continue
+        _merge_target_detail(stub, detail if isinstance(detail, dict) else {})
+    return items, None
+
+
+def _target_stub(raw: dict[str, Any]) -> dict[str, Any]:
+    status = str(raw.get("status") or "")
+    return {
+        "target_id": str(raw.get("targetId") or raw.get("target_id") or ""),
+        "name": str(raw.get("name") or ""),
+        "target_type": _target_type(raw),
+        "status": status,
+        "listing_mode": "",
+        "last_synchronized_at": _iso_time(
+            raw.get("lastSynchronizedAt") or raw.get("last_synchronized_at")
+        ),
+        "pending_auth": status in _PENDING_AUTH_STATUSES,
+        "authorization_url": None,
+        "syncable": False,
+        "status_reasons": [
+            str(item)
+            for item in (raw.get("statusReasons") or raw.get("status_reasons") or [])
+            if item
+        ],
+    }
+
+
+def _merge_target_detail(stub: dict[str, Any], detail: dict[str, Any]) -> None:
+    inner = detail.get("target") if isinstance(detail.get("target"), dict) else detail
+    if not isinstance(inner, dict):
+        return
+    status = str(inner.get("status") or stub["status"])
+    stub["status"] = status
+    stub["pending_auth"] = status in _PENDING_AUTH_STATUSES
+    target_type = _target_type(inner)
+    if target_type:
+        stub["target_type"] = target_type
+    mode = _walk_str(inner, "listingMode") or _walk_str(inner, "listing_mode")
+    if mode:
+        stub["listing_mode"] = mode.upper()
+    synced = _iso_time(inner.get("lastSynchronizedAt") or inner.get("last_synchronized_at"))
+    if synced:
+        stub["last_synchronized_at"] = synced
+    reasons = inner.get("statusReasons") or inner.get("status_reasons")
+    if isinstance(reasons, list):
+        stub["status_reasons"] = [str(item) for item in reasons if item]
+    auth_url = _authorization_url(inner)
+    if auth_url:
+        from kiro_crew.security import allow_agentcore_consent_url
+
+        stub["authorization_url"] = auth_url if allow_agentcore_consent_url(auth_url) else None
+    stub["syncable"] = (
+        stub["listing_mode"] == LISTING_DEFAULT
+        and status in _SYNCABLE_STATUSES
+        and stub["target_type"] in {"MCP_SERVER", "MCP", ""}
+    )
+
+
+def _target_type(raw: dict[str, Any]) -> str:
+    direct = raw.get("targetType") or raw.get("target_type")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip().upper()
+    config = raw.get("targetConfiguration") or raw.get("target_configuration")
+    if isinstance(config, dict) and config:
+        key = next(iter(config.keys()))
+        return str(key).upper()
+    return ""
+
+
+def _walk_str(data: Any, needle: str) -> str:
+    if isinstance(data, dict):
+        if needle in data and isinstance(data[needle], str) and data[needle].strip():
+            return data[needle].strip()
+        for value in data.values():
+            found = _walk_str(value, needle)
+            if found:
+                return found
+    elif isinstance(data, list):
+        for value in data:
+            found = _walk_str(value, needle)
+            if found:
+                return found
+    return ""
+
+
+def _authorization_url(data: Any) -> str | None:
+    found = _walk_str(data, "authorizationUrl") or _walk_str(data, "authorization_url")
+    if found.startswith("https://"):
+        return found
+    return None
+
+
+def _iso_time(value: Any) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        try:
+            return str(value.isoformat())
+        except Exception:
+            return ""
+    text = str(value).strip()
+    return text
+
+
+def _build_checks(
+    *,
+    url: str,
+    ref: dict[str, str],
+    posture: str,
+    gateway: dict[str, Any],
+    extra: bool,
+) -> list[dict[str, Any]]:
+    authorizer = str(gateway.get("authorizer_type") or "")
+    status = str(gateway.get("status") or "")
+    reported = str(gateway.get("gateway_url") or "")
+    url_match = _urls_match(url, reported) if reported else True
+    authorizer_ok = _authorizer_matches(posture, authorizer)
+    invoke_ok = ref["id"].startswith(INVOKE_ARN_PREFIX)
+    return [
+        {"id": "url", "ok": True, "detail": "ok"},
+        {"id": "extra", "ok": extra, "detail": "ok" if extra else SNAPSHOT_EXTRA_MISSING},
+        {"id": "reachable", "ok": True, "detail": "ok"},
+        {
+            "id": "ready",
+            "ok": status == GATEWAY_READY,
+            "detail": status or SNAPSHOT_AWS_ERROR,
+        },
+        {
+            "id": "authorizer",
+            "ok": authorizer_ok,
+            "detail": authorizer or "unknown",
+        },
+        {
+            "id": "url_match",
+            "ok": url_match,
+            "detail": "ok" if url_match else "mismatch",
+        },
+        {
+            "id": "invoke_scope",
+            "ok": invoke_ok or posture == "login",
+            "detail": "ok" if invoke_ok else "not_kirocrew_prefixed",
+        },
+    ]
+
+
+def _authorizer_matches(posture: str, authorizer: str) -> bool:
+    if posture == "workload":
+        return authorizer == AUTHORIZER_IAM
+    if posture == "login":
+        return authorizer == AUTHORIZER_JWT
+    return False
+
+
+def _urls_match(configured: str, reported: str) -> bool:
+    left = urlparse(configured)
+    right = urlparse(reported)
+    if not right.hostname:
+        return True
+    return (left.hostname or "").lower() == right.hostname.lower()
+
+
+def _list_tools(
+    *,
+    url: str,
+    region: str,
+    posture: str,
+    authorizer: str,
+) -> dict[str, Any]:
+    if posture == "login":
+        return _empty_tools(TOOLS_SKIP_LOGIN)
+    if authorizer and authorizer != AUTHORIZER_IAM:
+        return _empty_tools(TOOLS_SKIP_MISMATCH)
+    try:
+        session_id = _mcp_initialize(url, region)
+        items = _mcp_tools_list(url, region, session_id=session_id)
+    except _ToolsDenied:
+        return _empty_tools(TOOLS_DENIED)
+    except Exception:
+        logger.warning("Gateway tools/list failed", exc_info=True)
+        return _empty_tools(TOOLS_SKIP_UNREACHABLE)
+    return {"reachable": True, "skip_reason": None, "items": items[:TOOLS_LIST_MAX]}
+
+
+def _tools_check(tools: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "tools",
+        "ok": bool(tools.get("reachable")),
+        "detail": tools.get("skip_reason") or "ok",
+    }
+
+
+class _ToolsDenied(Exception):
+    """Data-plane 401/403 — inbound auth rejected the inspect call."""
+
+
+def _mcp_initialize(url: str, region: str) -> str:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": MCP_CLIENT_NAME, "version": "1"},
+        },
+    }
+    headers, body = _mcp_post(url, region, payload)
+    _parse_mcp_json(body)
+    for key, value in headers.items():
+        if key.lower() == "mcp-session-id" and value:
+            return value
+    return ""
+
+
+def _mcp_tools_list(url: str, region: str, *, session_id: str) -> list[dict[str, str]]:
+    payload = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+    headers, body = _mcp_post(url, region, payload, session_id=session_id)
+    del headers
+    parsed = _parse_mcp_json(body)
+    result = parsed.get("result") if isinstance(parsed, dict) else None
+    raw_tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(raw_tools, list):
+        return []
+    items: list[dict[str, str]] = []
+    for raw in raw_tools:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            continue
+        items.append(
+            {
+                "name": name,
+                "description": str(raw.get("description") or "").strip(),
+            }
+        )
+    return items
+
+
+def _mcp_post(
+    url: str,
+    region: str,
+    payload: dict[str, Any],
+    *,
+    session_id: str = "",
+) -> tuple[dict[str, str], bytes]:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    signed = sign_aws_request(method="POST", url=url, headers=headers, body=body, region=region)
+    request = urllib.request.Request(url, data=body, headers=signed, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=TOOLS_LIST_TIMEOUT_SECS) as resp:
+            return dict(resp.headers.items()), resp.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise _ToolsDenied(str(exc.code)) from exc
+        raise
+
+
+def _parse_mcp_json(body: bytes) -> dict[str, Any]:
+    text = body.decode("utf-8", errors="replace").strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            chunk = line[5:].strip()
+            if chunk.startswith("{"):
+                data = json.loads(chunk)
+                if isinstance(data, dict):
+                    return data
+    return {}
+
+
+def _scrub(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop accidental credential-shaped keys before they leave the module."""
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(key): walk(item)
+                for key, item in value.items()
+                if str(key).lower() not in _FORBIDDEN_STATUS_KEYS
+            }
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        return value
+
+    return walk(payload)
