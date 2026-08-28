@@ -441,7 +441,11 @@ delegates to that same global. Wired sites:
   owner-only `GET`/`POST /api/agentcore/gateway` against
   `platform/agentcore_inspect.py` (control-plane
   `bedrock-agentcore-control`; data-plane MCP `tools/list` via SigV4
-  on workload+IAM; login skips tools with a sign-in hint). Default adapter stays empty. The
+  on workload+IAM; login skips tools with a sign-in hint). Target type
+  is inferred from `targetConfiguration` (`mcp.lambda` → `LAMBDA`,
+  `mcp.mcpServer` → `MCP_SERVER`) because List/Get often omit
+  `targetType`; Sync is offered only for DEFAULT MCP servers — a
+  Lambda target returns `not_syncable`. Default adapter stays empty. The
   public `probe_instance_invoke_gateway()` is a no-op False; a companion
   must override it — False is "no mismatch detected", not "IAM inbound
   is impossible."

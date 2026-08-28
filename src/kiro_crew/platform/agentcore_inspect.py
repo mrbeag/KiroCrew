@@ -49,6 +49,20 @@ GATEWAY_READY = "READY"
 LISTING_DEFAULT = "DEFAULT"
 LISTING_DYNAMIC = "DYNAMIC"
 INVOKE_ARN_PREFIX = "kirocrew-"
+# Live GetGatewayTarget omits targetType; the type lives one level under
+# mcp/http. listingMode and schema fields share that object — never treat
+# those as the type (first-key walk would label a Lambda target MCP).
+_MCP_CONFIG_TYPES = {
+    "lambda": "LAMBDA",
+    "mcpserver": "MCP_SERVER",
+    "openapischema": "OPEN_API_SCHEMA",
+    "smithymodel": "SMITHY_MODEL",
+    "apigateway": "API_GATEWAY",
+}
+_HTTP_CONFIG_TYPES = {
+    "agentcoreruntime": "AGENTCORE_RUNTIME",
+}
+SYNC_NOT_SUPPORTED = "not_syncable"
 TARGET_DETAIL_MAX = 40
 LIST_PAGE_MAX = 50
 LIST_PAGES_MAX = 4
@@ -172,6 +186,8 @@ def synchronize_target(target_id: str) -> dict[str, Any]:
         client.synchronize_gateway_targets(gatewayIdentifier=ref["id"], targetIdList=[cleaned])
     except Exception as exc:
         code = _classify_aws_error(exc)
+        if "not supported for synchronization" in str(exc).lower():
+            code = SYNC_NOT_SUPPORTED
         logger.warning("SynchronizeGatewayTargets failed (%s)", code, exc_info=True)
         return {"code": code, "target_id": cleaned}
     return {"code": "accepted", "target_id": cleaned}
@@ -363,10 +379,34 @@ def _target_type(raw: dict[str, Any]) -> str:
     if isinstance(direct, str) and direct.strip():
         return direct.strip().upper()
     config = raw.get("targetConfiguration") or raw.get("target_configuration")
-    if isinstance(config, dict) and config:
-        key = next(iter(config.keys()))
-        return str(key).upper()
-    return ""
+    return _infer_target_type_from_config(config)
+
+
+def _infer_target_type_from_config(config: Any) -> str:
+    """Map Create/GetGatewayTarget config shape to a catalog type.
+
+    Control-plane list/get often omit ``targetType``. The live AWS_IAM
+    Lambda shape is ``{mcp: {lambda: ...}}`` — walking the first key
+    would report ``MCP``. Skip listingMode / schema siblings.
+    """
+    if not isinstance(config, dict) or not config:
+        return ""
+    mcp = config.get("mcp")
+    if isinstance(mcp, dict):
+        for candidate in mcp:
+            mapped = _MCP_CONFIG_TYPES.get(str(candidate).replace("_", "").lower())
+            if mapped:
+                return mapped
+    http = config.get("http")
+    if isinstance(http, dict):
+        for candidate in http:
+            mapped = _HTTP_CONFIG_TYPES.get(str(candidate).replace("_", "").lower())
+            if mapped:
+                return mapped
+        if http:
+            return str(next(iter(http.keys()))).upper()
+    top = next(iter(config.keys()))
+    return str(top).upper() if top not in {"mcp", "http"} else ""
 
 
 def _walk_str(data: Any, needle: str) -> str:

@@ -188,6 +188,56 @@ def test_snapshot_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     assert snap["code"] == inspect.SNAPSHOT_NOT_FOUND
 
 
+def test_live_lambda_target_shape_is_lambda_not_mcp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control plane omits targetType; type is mcp.lambda (live us-east-1)."""
+    client = _Client(
+        targets=[{"targetId": "ITSVDXYSAI", "name": "echo-hello", "status": "READY"}],
+        details={
+            "ITSVDXYSAI": {
+                "targetId": "ITSVDXYSAI",
+                "name": "echo-hello",
+                "status": "READY",
+                "targetConfiguration": {
+                    "mcp": {
+                        "lambda": {
+                            "lambdaArn": (
+                                "arn:aws:lambda:us-east-1:123456789012:function:kirocrew-e2e-echo"
+                            ),
+                            "toolSchema": {"inlinePayload": [{"name": "echo_hello"}]},
+                        }
+                    }
+                },
+                "credentialProviderConfigurations": [
+                    {"credentialProviderType": "GATEWAY_IAM_ROLE"}
+                ],
+            }
+        },
+    )
+    _isolate(monkeypatch, client=client)
+    snap = inspect.inspect_snapshot()
+    target = snap["targets"][0]
+    assert target["target_type"] == "LAMBDA"
+    assert target["syncable"] is False
+
+
+def test_synchronize_lambda_is_not_syncable(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Unsupported(Exception):
+        response = {"Error": {"Code": "ValidationException"}}
+
+        def __str__(self) -> str:
+            return (
+                "An error occurred (ValidationException) when calling the "
+                "SynchronizeGatewayTargets operation: Target type LAMBDA is "
+                "not supported for synchronization"
+            )
+
+    _isolate(monkeypatch, client=_Client(sync_error=Unsupported()))
+    result = inspect.synchronize_target("ITSVDXYSAI")
+    assert result["code"] == inspect.SYNC_NOT_SUPPORTED
+
+
 def test_synchronize_target_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _isolate(monkeypatch)
     result = inspect.synchronize_target("t1")
