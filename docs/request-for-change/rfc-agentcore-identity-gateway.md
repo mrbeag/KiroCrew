@@ -970,9 +970,9 @@ Closed on the existing-Gateway honesty pass:
 
 Still open (not v1 blockers):
 
-- Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP
-  (needs a public OIDC discovery URL). Unit path is covered
-  (oauth_challenge sidecar; companion JWT → `Bearer`).
+- kiro-cli's hosted MCP OAuth challenge (`Authorize` /
+  `_kiro.dev/mcp/oauth_request`) against a `CUSTOM_JWT` Gateway was
+  not driven. The product sidecar + a real IdP JWT were.
 - MCP initialize on this Gateway does not return `mcp-session-id`;
   `tools/list` still works without one.
 - Creating a Gateway also creates a service-linked identity that
@@ -982,6 +982,43 @@ Still open (not v1 blockers):
 - Lambda targets stay `not_syncable`.
 - Desktop/PEP 668 extra install and widening Invoke to `gateway/*`
   stay out of v1.
+
+Closed on the leftover-validation pass (live, 2026-08-28):
+
+- **Desktop / PEP 668.** Host Homebrew Python 3.14 is
+  `EXTERNALLY-MANAGED`, not a venv, and has no boto3.
+  `python3 -m pip install kirocrew[agentcore]` exits 1 with the
+  PEP 668 error (no `--break-system-packages`). The worktree venv
+  reports `extra_available` / `extra_code=ok`. Settings
+  `no_install_channel` is the correct desktop answer.
+- **Phase 5 `GetResourceOauth2Token`.**
+  `ListOauth2CredentialProviders` is empty in this account. A WAT
+  for standalone `kirocrew-e2e` vends. `GetResourceOauth2Token`
+  against a missing provider is `ValidationException` ("invalid
+  type or does not exist"). Gateway MCP tools already list and
+  call without Crew becoming a token broker. Phase 5 stays out.
+- **Invoke `gateway/*`.** Created IAM Gateway
+  `existing-customer-oonks9wcjt` (not `kirocrew-*`) + public MCP
+  target. Admin/laptop credentials: catalog `invoke_scope` green
+  via proxy (`via=proxy`, 3 tools). Assumed
+  `kirocrew-e2e-instance`: inspect `ok`, tools `tools_denied`,
+  `invoke_denied`. Settings customers with their own creds do not
+  need a wider CFN grant. A CFN-launched box still cannot Invoke a
+  non-`kirocrew-*` Gateway unless the operator attaches that ARN.
+  Successor boundary stays `kirocrew-*`.
+- **Login / CUSTOM_JWT.** Tagged Cognito pool `kirocrew-e2e-oidc`
+  (test IdP, not product SSO) + Gateway `kirocrew-e2e-jwt`.
+  Discovery URL is public. Unsigned initialize is 401. A Cognito
+  **IdToken** with Gateway `allowedAudience` = app client id
+  initializes 200 and `tools/list` returns the three
+  `public-docs___` tools. A Cognito **access** token (no `aud`,
+  `token_use=access`) is 403 `insufficient_scope`. Product login
+  catalog: authorizer `CUSTOM_JWT`, tools `login_needs_sign_in`.
+  Attach without JWT: https sidecar + `oauth_challenge`. Attach
+  with the IdToken: `Authorization: Bearer` + session/new HTTP
+  inject carries the header. The operator IdP must issue a JWT
+  the Gateway's audience/client allow-list accepts — Cognito's
+  IdToken does; its access token does not.
 
 ## Alternatives considered
 
