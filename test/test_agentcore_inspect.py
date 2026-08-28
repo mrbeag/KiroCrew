@@ -147,6 +147,9 @@ def test_snapshot_ok_lists_targets_and_tools(monkeypatch: pytest.MonkeyPatch) ->
     assert "authorizer" in ids
     assert "tools" in ids
     assert "identity" in ids
+    invoke = next(c for c in snap["checks"] if c["id"] == "invoke_scope")
+    assert invoke["ok"] is False
+    assert invoke["detail"] == "not_kirocrew_prefixed"
     assert all(c["ok"] for c in snap["checks"] if c["id"] != "invoke_scope")
 
 

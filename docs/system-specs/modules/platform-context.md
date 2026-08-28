@@ -450,11 +450,15 @@ delegates to that same global. Wired sites:
   `mcp.mcpServer` → `MCP_SERVER`) because List/Get often omit
   `targetType`; Sync is offered only for DEFAULT MCP servers — a
   Lambda target returns `not_syncable`. Settings authors
-  `capabilities.agentcore.workload_name` (policy-first, then env, then
-  the RFC default `kirocrew`) so a named identity is not stuck on
-  leftover systemd `KIROCREW_AGENTCORE_WORKLOAD_NAME`. `resolved_posture()`
-  is policy-first the same way, so leftover `KIROCREW_AGENTCORE_POSTURE`
-  cannot hide a Settings `login`. Login attach
+  `capabilities.agentcore.workload_name` (policy-first, then env).
+  Settings-only empty stays unnamed — do not invent `kirocrew`. Launch
+  env posture without a systemd name still uses the RFC default
+  `kirocrew`. `resolved_posture()` is policy-first the same way, so
+  leftover `KIROCREW_AGENTCORE_POSTURE` cannot hide a Settings `login`.
+  Owner-dashboard PUT hot-applies the home file onto the running
+  ceiling and AWS adapter (`apply_agentcore_runtime`) and rebuilds the
+  agent config; `restart_required` stays true only when that apply
+  cannot attach the extra. Login attach
   writes the https Gateway URL, never the workload SigV4 proxy, even
   when env posture is still `workload`. The sidecar
   `Authorization` value is RFC 6750 `Bearer` (the `InboundToken.scheme`

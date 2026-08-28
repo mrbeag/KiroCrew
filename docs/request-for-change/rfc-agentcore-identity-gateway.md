@@ -891,6 +891,20 @@ Closed after the run:
   env `workload` no longer hides a Settings `login` from catalog
   (authorizer mismatch against this AWS_IAM Gateway is now visible).
 
+Closed on the production-ready pass:
+
+- Owner-dashboard PUT hot-applies the home file onto the running
+  ceiling and AWS adapter (`apply_agentcore_runtime`) and rebuilds
+  the agent config. `restart_required` stays true only when that
+  apply cannot attach the extra.
+- Settings-only empty no longer invents `kirocrew`. PUT posture-on
+  without a name is 400 `workload_name_required`; the UI disables
+  Save until a name is set. Launch env posture without a systemd
+  name still uses the RFC default.
+- Invoke-scope stays `kirocrew-*` (successor boundary). A pasted
+  non-prefixed Gateway is inspect-ok and invoke-not, with a
+  catalog hint (`not_kirocrew_prefixed`).
+
 Still open (not v1 blockers):
 
 - Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP
@@ -902,8 +916,10 @@ Still open (not v1 blockers):
   refuses caller WAT. Crew must use a standalone workload identity.
   Settings now names that failure `service_linked`.
 - Phase 5 `GetResourceOauth2Token` stays follow-on.
-- Lambda targets stay `not_syncable`. An MCP_SERVER target was not
-  added to the tagged stack.
+- Lambda targets stay `not_syncable`. An MCP_SERVER target on the
+  tagged stack is a live follow-on of this pass.
+- Instance-role-only catalog/WAT/SigV4 (not admin) is a live
+  follow-on of this pass.
 
 ## Alternatives considered
 

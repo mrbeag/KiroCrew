@@ -12096,7 +12096,9 @@
           "allow_all_confirm_ack": "インストールする各サードパーティアプリが、Kiro Crew のアクセス権で独自のコードを実行できるようになることを理解しました。",
           "ineffective_label": "保存済みだが機能していません",
           "ineffective_description": "これらの名前は信頼済みとして保存されましたが、Kiro Crew はそれらを受け付けないため、アプリは依然としてブロックされています。リストを整理するには削除してください。"
-        }
+        },
+        "agent_identity_name_required": "ID をオンにする前にワークロード名を設定してください。",
+        "agent_identity_code_not_kirocrew": "このゲートウェイの ID は kirocrew- で始まっていません。インスタンスロールは検査できますが、呼び出しは kirocrew-* ゲートウェイに限られます。"
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "チャットタブの切り替えを Option+digit ではなく Ctrl+digit にバインドします",

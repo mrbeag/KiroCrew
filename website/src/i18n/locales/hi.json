@@ -12263,7 +12263,9 @@
           "allow_all_confirm_ack": "मैं समझता हूँ कि इंस्टॉल किया गया हर तीसरे पक्ष का ऐप Kiro Crew की पहुँच के साथ अपना कोड चला सकेगा।",
           "ineffective_label": "सहेजा गया पर काम नहीं कर रहा",
           "ineffective_description": "ये नाम भरोसेमंद के रूप में सहेजे गए थे, पर Kiro Crew इन्हें स्वीकार नहीं करता, इसलिए ये ऐप अब भी ब्लॉक हैं। सूची साफ़ करने के लिए इन्हें हटा दें।"
-        }
+        },
+        "agent_identity_name_required": "पहचान चालू करने से पहले वर्कलोड नाम सेट करें।",
+        "agent_identity_code_not_kirocrew": "इस गेटवे की आईडी kirocrew- से शुरू नहीं होती। इंस्टेंस भूमिका इसे पढ़ सकती है, लेकिन कॉल केवल kirocrew-* गेटवे तक सीमित रहती है।"
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "चैट-टैब स्विचिंग को Option+अंक के बजाय Ctrl+अंक से बाइंड करें",

@@ -1282,18 +1282,23 @@ PUT merges `capabilities.agentcore` into the standalone home
 `security_policy.json` (`_policy_home_path()`). It does not write a fleet
 `KIROCREW_SECURITY_POLICY` override or a signed document (409
 `policy_not_writable`). App tokens are 403 `dashboard_user_required` — the
-same owner-only trust model as computer-use Settings. The ceiling is
-boot-frozen, so a write that changes posture returns `restart_required`.
-A write to `workload` or `login` also installs `kirocrew[agentcore]` into this
-gateway interpreter (`ensure_extra`); GET never pips. The snapshot carries
+same owner-only trust model as computer-use Settings. Owner-dashboard
+PUT hot-applies the home file onto the running ceiling and AWS adapter
+(`apply_agentcore_runtime`) and rebuilds the agent config, so Save is
+enough for inject and login-withhold. `restart_required` stays true
+only when that apply cannot attach the extra. A write to `workload` or
+`login` also installs `kirocrew[agentcore]` into this gateway
+interpreter (`ensure_extra`); GET never pips. The snapshot carries
 `extra_installed` and `extra_code` (`ok` / `no_install_channel` /
-`install_failed` / `null`). A Settings-only configure with no systemd name
-uses the RFC default workload name `kirocrew`. PUT also accepts optional
-`gateway_url` (https MCP URL, no credentials) on the same
-`capabilities.agentcore` row — policy-only, like `posture`. GET returns the
-authored URL (policy first, else launch env). A profile cannot carry
-`gateway_url`. This is not a Remote Crew / launch control: a hub launching
-another box is a different crew.
+`install_failed` / `null`). PUT posture-on without a workload name
+returns 400 `workload_name_required` — Settings-only does not invent
+`kirocrew`. The RFC default `kirocrew` is used only when launch env
+posture is set and CFN omitted the systemd name. PUT also accepts
+optional `gateway_url` (https MCP URL, no credentials) on the same
+`capabilities.agentcore` row — policy-only, like `posture`. GET
+returns the authored URL (policy first, else launch env). A profile
+cannot carry `gateway_url`. This is not a Remote Crew / launch
+control: a hub launching another box is a different crew.
 
 `capabilities.publish` is a `CapabilityGate` (opt-in: `capability_default=False`)
 with an inner `destinations` `ScopedRuleset` (`identifier` matcher) bounding

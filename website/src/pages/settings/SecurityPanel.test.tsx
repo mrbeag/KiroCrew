@@ -1889,25 +1889,44 @@ describe('SecurityPanel — agent identity', () => {
       ...IDENTITY_UNSET,
       configured: true,
       posture: 'workload',
+      workload_name: 'kirocrew-e2e',
       source: 'policy',
-      restart_required: true,
+      restart_required: false,
     })
     renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
 
     const select = await screen.findByLabelText(i18nT('pages.settings.securityPanel.agent_identity_posture'))
     fireEvent.change(select, { target: { value: 'workload' } })
+    fireEvent.change(
+      screen.getByLabelText(i18nT('pages.settings.securityPanel.agent_identity_name')),
+      { target: { value: 'kirocrew-e2e' } },
+    )
     fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }))
 
     await waitFor(() =>
       expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({
         posture: 'workload',
         gateway_url: '',
-        workload_name: '',
+        workload_name: 'kirocrew-e2e',
       }),
     )
     expect(
-      await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_restart')),
+      screen.queryByText(i18nT('pages.settings.securityPanel.agent_identity_restart')),
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not save when identity is on without a workload name', async () => {
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+
+    const select = await screen.findByLabelText(i18nT('pages.settings.securityPanel.agent_identity_posture'))
+    fireEvent.change(select, { target: { value: 'workload' } })
+    expect(
+      await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_name_required')),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }),
+    ).toBeDisabled()
+    expect(api.saveAgentcoreIdentity).not.toHaveBeenCalled()
   })
 
   it('disables save when this crew\'s policy is not writable', async () => {
@@ -1970,12 +1989,17 @@ describe('SecurityPanel — agent identity', () => {
       posture: 'workload',
       source: 'policy',
       gateway_url: 'https://gw.example.test/mcp',
-      restart_required: true,
+      workload_name: 'kirocrew-e2e',
+      restart_required: false,
     })
     renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
 
     const select = await screen.findByLabelText(i18nT('pages.settings.securityPanel.agent_identity_posture'))
     fireEvent.change(select, { target: { value: 'workload' } })
+    fireEvent.change(
+      screen.getByLabelText(i18nT('pages.settings.securityPanel.agent_identity_name')),
+      { target: { value: 'kirocrew-e2e' } },
+    )
     fireEvent.change(
       screen.getByLabelText(i18nT('pages.settings.securityPanel.agent_identity_gateway_url')),
       { target: { value: 'https://gw.example.test/mcp' } },
@@ -1986,7 +2010,7 @@ describe('SecurityPanel — agent identity', () => {
       expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({
         posture: 'workload',
         gateway_url: 'https://gw.example.test/mcp',
-        workload_name: '',
+        workload_name: 'kirocrew-e2e',
       }),
     )
   })
@@ -2012,7 +2036,7 @@ describe('SecurityPanel — agent identity', () => {
     ;(api.saveAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...configured,
       posture: 'login',
-      restart_required: true,
+      restart_required: false,
     })
     renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
     await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_catalog'))

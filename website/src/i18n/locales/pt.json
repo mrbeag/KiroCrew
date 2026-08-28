@@ -12428,7 +12428,9 @@
           "allow_all_confirm_ack": "Entendo que todo app de terceiros que eu instalar vai poder executar o próprio código com o acesso do Kiro Crew.",
           "ineffective_label": "Salvo, mas sem efeito",
           "ineffective_description": "Esses nomes foram salvos como confiáveis, mas o Kiro Crew não os aceita, então os apps continuam bloqueados. Remova-os para limpar a lista."
-        }
+        },
+        "agent_identity_name_required": "Defina um nome de carga de trabalho antes de ativar a identidade.",
+        "agent_identity_code_not_kirocrew": "O id deste gateway não começa com kirocrew-. A função da instância pode inspecioná-lo, mas a invocação continua limitada a gateways kirocrew-*."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "Vincular a alternância de abas de chat a Ctrl+dígito em vez de Option+dígito",

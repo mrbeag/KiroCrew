@@ -41,6 +41,8 @@ def _isolate(monkeypatch, tmp_path: Path, *, env: dict[str, str] | None = None) 
     monkeypatch.setattr(mod, "agentcore_posture", lambda _ceiling: None)
     monkeypatch.setattr(mod, "_audit", lambda *a, **k: None)
     monkeypatch.setattr(mod, "ensure_extra", lambda: "ok")
+    monkeypatch.setattr(mod, "apply_agentcore_runtime", lambda: True)
+    monkeypatch.setattr(mod, "_rebuild_agent_after_apply", lambda: None)
     monkeypatch.setattr(
         mod,
         "extra_snapshot",
@@ -83,6 +85,24 @@ def test_get_reads_home_file_not_running_ceiling(tmp_path: Path, monkeypatch) ->
     assert body["restart_required"] is True
 
 
+def test_put_hot_applies_so_restart_is_not_required(tmp_path: Path, monkeypatch) -> None:
+    home = _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "workload_name": "kirocrew-e2e"})
+        )
+    )
+    assert resp.status == 200
+    body = json.loads(resp.text)
+    assert body["posture"] == "workload"
+    assert body["workload_name"] == "kirocrew-e2e"
+    assert body["restart_required"] is False
+    assert (
+        json.loads(home.read_text(encoding="utf-8"))["capabilities"]["agentcore"]["workload_name"]
+        == "kirocrew-e2e"
+    )
+
+
 def test_put_refuses_app_token(tmp_path: Path, monkeypatch) -> None:
     _isolate(monkeypatch, tmp_path)
     resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "workload"}, app="board")))
@@ -101,15 +121,21 @@ def test_put_none_without_file_is_noop(tmp_path: Path, monkeypatch) -> None:
 
 def test_put_writes_minimal_home_policy(tmp_path: Path, monkeypatch) -> None:
     home = _isolate(monkeypatch, tmp_path)
-    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "login"})))
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(_Req({"posture": "login", "workload_name": "kirocrew-e2e"}))
+    )
     assert resp.status == 200
     data = json.loads(home.read_text(encoding="utf-8"))
     assert data["version"] == 1
     assert data["boot"]["fail_closed"] is True
-    assert data["capabilities"]["agentcore"] == {"enabled": True, "posture": "login"}
+    assert data["capabilities"]["agentcore"] == {
+        "enabled": True,
+        "posture": "login",
+        "workload_name": "kirocrew-e2e",
+    }
     body = json.loads(resp.text)
     assert body["posture"] == "login"
-    assert body["restart_required"] is True
+    assert body["restart_required"] is False
 
 
 def test_put_merges_without_wiping_other_capabilities(tmp_path: Path, monkeypatch) -> None:
@@ -124,11 +150,19 @@ def test_put_merges_without_wiping_other_capabilities(tmp_path: Path, monkeypatc
         ),
         encoding="utf-8",
     )
-    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "workload"})))
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "workload_name": "kirocrew-e2e"})
+        )
+    )
     assert resp.status == 200
     data = json.loads(home.read_text(encoding="utf-8"))
     assert data["capabilities"]["cron"] == {"enabled": True}
-    assert data["capabilities"]["agentcore"] == {"enabled": True, "posture": "workload"}
+    assert data["capabilities"]["agentcore"] == {
+        "enabled": True,
+        "posture": "workload",
+        "workload_name": "kirocrew-e2e",
+    }
 
 
 def test_put_refuses_fleet_override(tmp_path: Path, monkeypatch) -> None:
@@ -170,9 +204,14 @@ def test_put_rejects_bad_posture(tmp_path: Path, monkeypatch) -> None:
     assert json.loads(resp.text)["code"] == "invalid_agentcore_posture"
 
 
-def test_put_configures_default_workload_name_and_installs_extra(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_put_requires_workload_name_when_identity_is_on(tmp_path: Path, monkeypatch) -> None:
+    _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "workload"})))
+    assert resp.status == 400
+    assert json.loads(resp.text)["code"] == "workload_name_required"
+
+
+def test_put_installs_extra_when_named(tmp_path: Path, monkeypatch) -> None:
     calls: list[str] = []
 
     def _record() -> str:
@@ -181,10 +220,14 @@ def test_put_configures_default_workload_name_and_installs_extra(
 
     home = _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(mod, "ensure_extra", _record)
-    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "workload"})))
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "workload_name": "kirocrew-e2e"})
+        )
+    )
     assert resp.status == 200
     body = json.loads(resp.text)
-    assert body["workload_name"] == "kirocrew"
+    assert body["workload_name"] == "kirocrew-e2e"
     assert body["extra_code"] == "ok"
     assert body["extra_installed"] is True
     assert calls == ["ensure"]
@@ -229,7 +272,13 @@ def test_put_writes_gateway_url(tmp_path: Path, monkeypatch) -> None:
     home = _isolate(monkeypatch, tmp_path)
     resp = asyncio.run(
         mod.api_agentcore_identity_save(
-            _Req({"posture": "workload", "gateway_url": "https://gw.example.test/mcp"})
+            _Req(
+                {
+                    "posture": "workload",
+                    "workload_name": "kirocrew-e2e",
+                    "gateway_url": "https://gw.example.test/mcp",
+                }
+            )
         )
     )
     assert resp.status == 200
@@ -261,6 +310,7 @@ def test_put_keeps_existing_gateway_url_when_omitted(tmp_path: Path, monkeypatch
                     "agentcore": {
                         "enabled": True,
                         "posture": "workload",
+                        "workload_name": "kirocrew-e2e",
                         "gateway_url": "https://gw.example.test/mcp",
                     }
                 },

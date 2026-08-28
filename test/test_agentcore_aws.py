@@ -68,7 +68,18 @@ def test_opted_in_from_policy_posture_without_env_name(monkeypatch) -> None:
     monkeypatch.delenv(aws_mod.ENV_AWS, raising=False)
     monkeypatch.delenv(aws_mod.ENV_POSTURE, raising=False)
     monkeypatch.setattr(aws_mod, "authored_posture", lambda: "login")
+    monkeypatch.setattr(aws_mod, "authored_workload_name", lambda: "")
     assert aws_mod.opted_in() is True
+    assert aws_mod.resolved_workload_name() == ""
+
+
+def test_resolved_workload_name_launch_env_uses_rfc_default(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.delenv(aws_mod.ENV_WORKLOAD, raising=False)
+    monkeypatch.setenv(aws_mod.ENV_POSTURE, "workload")
+    monkeypatch.setattr(aws_mod, "authored_posture", lambda: None)
+    monkeypatch.setattr(aws_mod, "authored_workload_name", lambda: "")
     assert aws_mod.resolved_workload_name() == aws_mod.DEFAULT_WORKLOAD_NAME
 
 
@@ -481,3 +492,68 @@ def test_probe_workload_identity_skips_login(monkeypatch) -> None:
         "detail": aws_mod.IDENTITY_PROBE_SKIP_LOGIN,
         "name": "kirocrew-e2e",
     }
+
+
+def test_apply_agentcore_runtime_swaps_ceiling_and_adapter(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import context as ctx_mod
+    from kiro_crew.platform import governance as gov_mod
+
+    ceiling = object()
+    adapter = object()
+    captured: dict[str, object] = {}
+    ctx = type("C", (), {"governance": None, "agent_identity": object()})()
+
+    monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
+    monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)
+    monkeypatch.setattr(ctx_mod, "set_context", lambda next_ctx: captured.update(ctx=next_ctx))
+    monkeypatch.setattr(aws_mod, "opted_in", lambda: True)
+    monkeypatch.setattr(aws_mod, "try_aws_agent_identity", lambda: adapter)
+
+    assert aws_mod.apply_agentcore_runtime() is True
+    applied = captured["ctx"]
+    assert getattr(applied, "governance") is ceiling
+    assert getattr(applied, "agent_identity") is adapter
+
+
+def test_apply_agentcore_runtime_off_uses_default_adapter(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import context as ctx_mod
+    from kiro_crew.platform import governance as gov_mod
+    from kiro_crew.platform.defaults import DefaultAgentIdentityProvider
+
+    ceiling = object()
+    captured: dict[str, object] = {}
+    ctx = type("C", (), {"governance": None, "agent_identity": object()})()
+
+    monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
+    monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)
+    monkeypatch.setattr(ctx_mod, "set_context", lambda next_ctx: captured.update(ctx=next_ctx))
+    monkeypatch.setattr(aws_mod, "opted_in", lambda: False)
+
+    assert aws_mod.apply_agentcore_runtime() is True
+    applied = captured["ctx"]
+    assert getattr(applied, "governance") is ceiling
+    assert isinstance(getattr(applied, "agent_identity"), DefaultAgentIdentityProvider)
+
+
+def test_apply_agentcore_runtime_missing_extra_keeps_ceiling(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+    from kiro_crew.platform import context as ctx_mod
+    from kiro_crew.platform import governance as gov_mod
+
+    ceiling = object()
+    previous = object()
+    captured: dict[str, object] = {}
+    ctx = type("C", (), {"governance": None, "agent_identity": previous})()
+
+    monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
+    monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)
+    monkeypatch.setattr(ctx_mod, "set_context", lambda next_ctx: captured.update(ctx=next_ctx))
+    monkeypatch.setattr(aws_mod, "opted_in", lambda: True)
+    monkeypatch.setattr(aws_mod, "try_aws_agent_identity", lambda: None)
+
+    assert aws_mod.apply_agentcore_runtime() is False
+    applied = captured["ctx"]
+    assert getattr(applied, "governance") is ceiling
+    assert getattr(applied, "agent_identity") is previous

@@ -10,8 +10,9 @@ computer-use Settings: dashboard cookie, no app token). The agent tool
 gate still cannot touch that path. A fleet env override or a signed
 document is refused rather than rewritten.
 
-The ceiling is boot-frozen. A write that changes posture returns
-``restart_required: true``.
+Owner-dashboard PUT hot-applies the home file onto the running
+ceiling and AWS adapter. ``restart_required`` stays true only when
+that apply cannot attach the extra.
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ from typing import Any
 from aiohttp import web
 
 from kiro_crew.platform.agentcore_aws import (
-    DEFAULT_WORKLOAD_NAME,
     ENV_GATEWAY_URL,
+    apply_agentcore_runtime,
     ensure_extra,
     extra_snapshot,
     normalize_agentcore_gateway_url,
@@ -93,16 +94,12 @@ def _file_workload_name() -> str:
 
 
 def _workload_name(posture: str | None = None) -> str:
-    """Policy name, else env, else the RFC default when a posture is on."""
+    """Policy name, else launch env. Do not invent ``kirocrew``."""
+    del posture
     name = _file_workload_name()
     if name:
         return name
-    name = os.environ.get(_ENV_WORKLOAD, "").strip()
-    if name:
-        return name
-    if posture in {"workload", "login"}:
-        return DEFAULT_WORKLOAD_NAME
-    return ""
+    return os.environ.get(_ENV_WORKLOAD, "").strip()
 
 
 def _file_row() -> dict[str, Any] | None:
@@ -178,13 +175,25 @@ def _write_reason() -> str:
     return ""
 
 
-def _snapshot(*, last_extra_code: str | None = None) -> dict[str, Any]:
+def _rebuild_agent_after_apply() -> None:
+    """Rebuild so the next session/new sees the new Gateway spec."""
+    try:
+        from kiro_crew.agent import rebuild_agent_config
+
+        rebuild_agent_config()
+    except Exception:
+        logger.warning("AgentCore apply: agent config rebuild failed", exc_info=True)
+
+
+def _snapshot(
+    *, last_extra_code: str | None = None, runtime_applied: bool = False
+) -> dict[str, Any]:
     """Display the authored posture; flag when the running ceiling is stale.
 
-    Settings configures THIS crew's home policy. The ceiling is boot-frozen,
-    so a file that disagrees with ``agentcore_posture(ceiling)`` is a pending
-    restart, not an unset identity. ``last_extra_code`` is a just-ran
-    ``ensure_extra`` result (PUT); GET never pips.
+    Settings configures THIS crew's home policy. PUT hot-applies the file
+    onto the running ceiling; ``runtime_applied`` means that reload
+    succeeded. GET never pips. ``last_extra_code`` is a just-ran
+    ``ensure_extra`` result (PUT).
     """
     ceiling = getattr(current_context(), "governance", None)
     running = agentcore_posture(ceiling)
@@ -204,6 +213,8 @@ def _snapshot(*, last_extra_code: str | None = None) -> dict[str, Any]:
         else:
             source = "unset"
         restart = authored is not None and authored != running
+        if runtime_applied:
+            restart = False
     name = _workload_name(displayed)
     file_url = _file_gateway_url()
     env_url = _env_gateway_url()
@@ -467,6 +478,21 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             },
             status=409,
         )
+    if posture in {"workload", "login"}:
+        existing_name = ""
+        row = _file_row()
+        if row is not None and isinstance(row.get("workload_name"), str):
+            existing_name = str(row.get("workload_name") or "").strip()
+        chosen_name = existing_name if workload_name is None else workload_name
+        if not chosen_name:
+            _audit(request, operation=OP_SAVE, outcome="denied", resources="workload_name_required")
+            return web.json_response(
+                {
+                    "error": "workload_name is required when identity is on",
+                    "code": "workload_name_required",
+                },
+                status=400,
+            )
     try:
         path = _policy_home_path()
         if posture == "none" and not path.is_file():
@@ -489,6 +515,9 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
     extra_code = None
     if posture in {"workload", "login"}:
         extra_code = await asyncio.to_thread(ensure_extra)
-    payload = _snapshot(last_extra_code=extra_code)
+    applied = apply_agentcore_runtime()
+    if applied:
+        await asyncio.to_thread(_rebuild_agent_after_apply)
+    payload = _snapshot(last_extra_code=extra_code, runtime_applied=applied)
     _audit(request, operation=OP_SAVE, outcome="success", resources=posture)
     return web.json_response(payload)

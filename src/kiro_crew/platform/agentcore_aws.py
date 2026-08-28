@@ -262,11 +262,14 @@ def opted_in() -> bool:
 
 
 def resolved_workload_name() -> str:
-    """Policy name first (Settings), else launch env, else the RFC default.
+    """Policy name first (Settings), else launch env.
 
     A crew that names ``kirocrew-e2e`` in Settings must not stay stuck on
-    leftover ``KIROCREW_AGENTCORE_WORKLOAD_NAME=kirocrew`` (or empty →
-    default ``kirocrew``) and vend against an identity that does not exist.
+    leftover ``KIROCREW_AGENTCORE_WORKLOAD_NAME=kirocrew`` and vend against
+    an identity that does not exist. Settings-only empty stays unnamed
+    (catalog ``not_named``) — inventing ``kirocrew`` here is how a named
+    identity in the account is never the one we vend. Launch env posture
+    still uses the RFC default when CFN omitted the systemd name.
     """
     authored = authored_workload_name()
     if authored:
@@ -274,8 +277,12 @@ def resolved_workload_name() -> str:
     name = _env(ENV_WORKLOAD)
     if name:
         return name
+    # Settings-only posture without a name stays unnamed (catalog
+    # ``not_named``). Inventing ``kirocrew`` here is how a named identity
+    # in the account is never the one we vend. Launch env posture still
+    # uses the RFC default when CFN omitted the systemd name.
     if authored_posture() in _CONFIGURED_POSTURES:
-        return DEFAULT_WORKLOAD_NAME
+        return ""
     if _env(ENV_POSTURE).lower() in _CONFIGURED_POSTURES:
         return DEFAULT_WORKLOAD_NAME
     return ""
@@ -390,6 +397,39 @@ def ensure_extra() -> str:
             )
             return EXTRA_CODE_FAILED
         return EXTRA_CODE_OK
+
+
+def apply_agentcore_runtime() -> bool:
+    """Hot-apply a Settings/home-file AgentCore write onto the running context.
+
+    Catalog already reads the file. Inject, login-withhold, and
+    ``_identity_on`` still key on the boot-frozen ceiling and the
+    boot-swapped adapter. Owner-dashboard PUT is the operator's
+    out-of-band write of that keystone — reload both so Save is
+    sufficient. Returns False when the extra is missing or reload fails;
+    the UI then keeps ``restart_required``.
+    """
+    from dataclasses import replace
+
+    from kiro_crew.platform.context import current_context, set_context
+    from kiro_crew.platform.defaults import DefaultAgentIdentityProvider
+    from kiro_crew.platform.governance import load_security_policy
+
+    try:
+        ceiling = load_security_policy()
+    except Exception:
+        logger.warning("AgentCore runtime apply: policy reload failed", exc_info=True)
+        return False
+    ctx = current_context()
+    if opted_in():
+        adapter = try_aws_agent_identity()
+        if adapter is None:
+            set_context(replace(ctx, governance=ceiling))
+            return False
+    else:
+        adapter = DefaultAgentIdentityProvider()
+    set_context(replace(ctx, governance=ceiling, agent_identity=adapter))
+    return True
 
 
 def try_aws_agent_identity() -> "AwsAgentIdentityProvider | None":

@@ -2021,6 +2021,7 @@ const CATALOG_CODE_HINT: Record<string, string> = {
   identity_denied: 'pages.settings.securityPanel.agent_identity_code_identity_denied',
   identity_not_found: 'pages.settings.securityPanel.agent_identity_code_identity_not_found',
   identity_error: 'pages.settings.securityPanel.agent_identity_code_identity_error',
+  not_kirocrew_prefixed: 'pages.settings.securityPanel.agent_identity_code_not_kirocrew',
 }
 
 const TARGET_TYPE_LABEL: Record<string, string> = {
@@ -2052,6 +2053,10 @@ function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
   const authorizer = data.checks.find(c => c.id === 'authorizer')
   if (authorizer && !authorizer.ok) {
     return i18nT('pages.settings.securityPanel.agent_identity_mismatch_authorizer')
+  }
+  const invoke = data.checks.find(c => c.id === 'invoke_scope')
+  if (invoke && !invoke.ok && invoke.detail === 'not_kirocrew_prefixed') {
+    return i18nT('pages.settings.securityPanel.agent_identity_code_not_kirocrew')
   }
   if (data.tools.skip_reason === 'login_needs_sign_in') {
     return i18nT('pages.settings.securityPanel.agent_identity_tools_skipped_login')
@@ -2377,6 +2382,7 @@ function AgentIdentitySection() {
     (data?.posture ?? 'none') !== draft
     || (data?.gateway_url ?? '') !== draftUrl.trim()
     || (data?.workload_name ?? '') !== draftName.trim()
+  const nameRequired = draft !== 'none' && !draftName.trim()
   const blocked = Boolean(data && !data.writable)
   const { data: consent, isError: consentError } = useQuery<AgentcoreConsentData>({
     queryKey: ['agentcore-consent'],
@@ -2436,6 +2442,11 @@ function AgentIdentitySection() {
                   <span className="text-[12px] text-muted leading-relaxed">
                     {i18nT('pages.settings.securityPanel.agent_identity_name_hint')}
                   </span>
+                  {nameRequired ? (
+                    <span className="text-[12px] text-warn">
+                      {i18nT('pages.settings.securityPanel.agent_identity_name_required')}
+                    </span>
+                  ) : null}
                 </label>
               )}
               {draft !== 'none' && (
@@ -2498,7 +2509,7 @@ function AgentIdentitySection() {
               <div>
                 <Btn
                   primary
-                  disabled={blocked || !dirty || save.isPending}
+                  disabled={blocked || !dirty || nameRequired || save.isPending}
                   onClick={() => save.mutate()}
                 >
                   {save.isPending

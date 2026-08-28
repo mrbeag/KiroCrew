@@ -12096,7 +12096,9 @@
         "yolo_duration_next_activation_note": "다음에 자동 승인을 켤 때 적용됩니다.",
         "yolo_duration_title": "자동 승인 유지 시간",
         "yolo_duration_until_shutdown": "Kiro Crew가 재시작될 때까지",
-        "your_custom_denies": "사용자 지정 차단"
+        "your_custom_denies": "사용자 지정 차단",
+        "agent_identity_name_required": "자격 증명을 켜기 전에 워크로드 이름을 설정하세요.",
+        "agent_identity_code_not_kirocrew": "이 게이트웨이 ID는 kirocrew-로 시작하지 않습니다. 인스턴스 역할은 검사할 수 있지만 호출은 kirocrew-* 게이트웨이로만 제한됩니다."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "채팅 탭 전환을 Option+숫자 대신 Ctrl+숫자에 할당합니다",

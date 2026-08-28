@@ -12429,7 +12429,9 @@
           "allow_all_confirm_ack": "Je comprends que chaque application tierce que j'installe pourra exécuter son propre code avec les accès de Kiro Crew.",
           "ineffective_label": "Enregistré mais sans effet",
           "ineffective_description": "Ces noms ont été enregistrés comme de confiance, mais Kiro Crew ne les accepte pas, donc les applications restent bloquées. Retire-les pour nettoyer la liste."
-        }
+        },
+        "agent_identity_name_required": "Définissez un nom de charge de travail avant d’activer l’identité.",
+        "agent_identity_code_not_kirocrew": "L’identifiant de cette passerelle ne commence pas par kirocrew-. Le rôle d’instance peut l’inspecter, mais l’invocation reste limitée aux passerelles kirocrew-*."
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "Associer le changement d'onglet de chat à Ctrl+chiffre au lieu de Option+chiffre",

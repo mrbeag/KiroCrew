@@ -12096,7 +12096,9 @@
           "allow_all_confirm_ack": "我明白我安装的每个第三方应用都将能够以 Kiro Crew 的访问权限运行自身代码。",
           "ineffective_label": "已保存但未生效",
           "ineffective_description": "这些名称已被保存为受信任，但 Kiro Crew 不接受它们，因此这些应用仍然被拦截。移除它们可以整理这个列表。"
-        }
+        },
+        "agent_identity_name_required": "开启身份前请先设置工作负载名称。",
+        "agent_identity_code_not_kirocrew": "此网关 ID 不以 kirocrew- 开头。实例角色可以检查它，但调用仍仅限于 kirocrew-* 网关。"
       },
       "shortcutsPanel": {
         "bind_chat_tab_switching_to_ctrl_digit_instead_of": "将聊天标签切换绑定到 Ctrl+数字，而不是 Option+数字",
