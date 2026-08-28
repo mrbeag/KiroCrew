@@ -22,6 +22,15 @@ _GATEWAY_URL = "https://gateway.example.test/mcp"
 _TOKEN = "sltok-test-not-for-logs"
 
 
+@pytest.fixture(autouse=True)
+def _clear_live_agentcore_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A leftover E2E export must not rewrite login sidecars in this module."""
+    monkeypatch.delenv("KIROCREW_AGENTCORE_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("KIROCREW_AGENTCORE_POSTURE", raising=False)
+    monkeypatch.delenv("KIROCREW_AGENTCORE_WORKLOAD_NAME", raising=False)
+    monkeypatch.delenv("KIROCREW_AGENTCORE_AWS", raising=False)
+
+
 class _CompanionIdentity(DefaultAgentIdentityProvider):
     def __init__(
         self,
@@ -199,6 +208,35 @@ def test_login_vend_none_attaches_url_only_oauth_challenge(
     assert inbound[0].get("outcome") == "ok"
     assert "oauth_challenge" in str(inbound[0].get("resources") or "")
     assert _TOKEN not in json.dumps(inbound)
+
+
+def test_login_attach_uses_https_url_not_workload_proxy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Env leftover workload must not put the SigV4 proxy on a login sidecar."""
+    from kiro_crew.platform.agentcore_gateway import (
+        attach_gateway_inbound,
+        inbound_sidecar_path,
+    )
+
+    _seed_rebuild(tmp_path, monkeypatch)
+    _install(posture="login", spec={"url": "http://127.0.0.1:9/mcp"}, token=None)
+    monkeypatch.setattr(
+        "kiro_crew.platform.agentcore_aws.resolved_gateway_url",
+        lambda: _GATEWAY_URL,
+    )
+
+    async def _run() -> None:
+        path = await attach_gateway_inbound(_principal())
+        assert path == inbound_sidecar_path("dashboard:1")
+        sidecar = json.loads(path.read_text(encoding="utf-8"))
+        assert sidecar["url"] == _GATEWAY_URL
+        assert sidecar["oauth_challenge"] is True
+        assert "127.0.0.1" not in sidecar["url"]
+
+    import asyncio
+
+    asyncio.run(_run())
 
 
 def test_login_missing_spec_still_withholds_gateway() -> None:

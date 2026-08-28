@@ -12220,6 +12220,8 @@
         "agent_identity_consent_title": "Inicio de sesión de la puerta de enlace",
         "agent_identity_hint": "Identidad AgentCore de esta crew. Workload permite llegar a la puerta de enlace sin iniciar sesión. Login solo ofrece MCP aprobado por la puerta de enlace y exige que una persona inicie sesión. Off deja esta crew sin cambios.",
         "agent_identity_name": "Nombre de la carga de trabajo",
+        "agent_identity_name_hint": "La identidad de carga de trabajo de AgentCore con la que este crew obtiene tokens. Debe existir ya en la cuenta.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "La política de seguridad de esta crew está gestionada por la flota o firmada, así que no se puede cambiar aquí.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — solo MCP aprobado por la puerta de enlace; se requiere inicio de sesión",

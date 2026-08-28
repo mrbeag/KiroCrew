@@ -12386,6 +12386,8 @@
         "agent_identity_consent_title": "Вход в шлюз",
         "agent_identity_hint": "Идентичность AgentCore этой crew. Workload даёт доступ к шлюзу без входа. Login выдаёт только одобренный шлюзом MCP и требует входа человека. Off оставляет эту crew без изменений.",
         "agent_identity_name": "Имя рабочей нагрузки",
+        "agent_identity_name_hint": "Рабочая нагрузка AgentCore, от имени которой этот crew получает токены. Она уже должна существовать в аккаунте.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "Политика безопасности этой crew управляется флотом или подписана, поэтому её нельзя изменить здесь.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — только MCP, одобренный шлюзом; требуется вход",

@@ -12054,6 +12054,8 @@
         "agent_identity_consent_title": "গেটওয়ে সাইন-ইন",
         "agent_identity_hint": "এই crew-এর AgentCore পরিচয়। Workload লগইন ছাড়াই গেটওয়েতে পৌঁছায়। Login শুধু গেটওয়ে-অনুমোদিত MCP দেয় এবং সাইন-ইন লাগে। Off এই crew অপরিবর্তিত রাখে।",
         "agent_identity_name": "ওয়ার্কলোডের নাম",
+        "agent_identity_name_hint": "The AgentCore workload identity this crew vends tokens as. It must already exist in the account.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "এই crew-এর নিরাপত্তা নীতি ফ্লিট-পরিচালিত বা স্বাক্ষরিত, তাই এখানে বদলানো যায় না।",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — শুধু গেটওয়ে-অনুমোদিত MCP, সাইন-ইন প্রয়োজন",

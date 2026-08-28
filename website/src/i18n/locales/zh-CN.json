@@ -11887,6 +11887,8 @@
         "agent_identity_consent_title": "网关登录",
         "agent_identity_hint": "此 crew 的 AgentCore 身份。工作负载模式可在无需登录的情况下访问网关。登录模式只提供网关批准的 MCP，并且需要人工登录。关闭则保持此 crew 不变。",
         "agent_identity_name": "工作负载名称",
+        "agent_identity_name_hint": "此 crew 作为其颁发令牌的 AgentCore 工作负载身份。该身份必须已存在于账户中。",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "此 crew 的安全策略由集群管理或已签名，因此无法在此更改。",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "登录 — 仅网关批准的 MCP，需要登录",

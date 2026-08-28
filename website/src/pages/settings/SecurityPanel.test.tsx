@@ -1899,7 +1899,11 @@ describe('SecurityPanel — agent identity', () => {
     fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }))
 
     await waitFor(() =>
-      expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({ posture: 'workload', gateway_url: '' }),
+      expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({
+        posture: 'workload',
+        gateway_url: '',
+        workload_name: '',
+      }),
     )
     expect(
       await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_restart')),
@@ -1936,7 +1940,7 @@ describe('SecurityPanel — agent identity', () => {
     expect(
       await screen.findAllByText(i18nT('pages.settings.securityPanel.agent_identity_posture_login')),
     ).not.toHaveLength(0)
-    expect(await screen.findByText('kirocrew-alpha')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('kirocrew-alpha')).toBeInTheDocument()
   })
 
   it('shows an allowlisted sign-in link when Gateway consent is pending', async () => {
@@ -1982,6 +1986,7 @@ describe('SecurityPanel — agent identity', () => {
       expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({
         posture: 'workload',
         gateway_url: 'https://gw.example.test/mcp',
+        workload_name: '',
       }),
     )
   })

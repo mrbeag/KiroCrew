@@ -3348,6 +3348,7 @@ export const api = {
   saveAgentcoreIdentity: (body: {
     posture: 'none' | 'workload' | 'login'
     gateway_url?: string
+    workload_name?: string
   }) => put('/api/agentcore/identity', body).then(j) as Promise<AgentcoreIdentityData>,
   getAgentcoreConsent: () =>
     get('/api/agentcore/consent').then(j) as Promise<AgentcoreConsentData>,

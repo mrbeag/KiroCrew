@@ -31,6 +31,7 @@ from kiro_crew.platform.agentcore_aws import (
     ensure_extra,
     extra_snapshot,
     normalize_agentcore_gateway_url,
+    normalize_agentcore_workload_name,
 )
 from kiro_crew.platform.context import current_context
 from kiro_crew.platform.governance import (
@@ -78,7 +79,24 @@ def _audit(
         logger.warning("SEL logging failed for %s", operation, exc_info=True)
 
 
+def _file_workload_name() -> str:
+    row = _file_row()
+    if row is None:
+        return ""
+    raw = row.get("workload_name")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    try:
+        return normalize_agentcore_workload_name(raw)
+    except ValueError:
+        return ""
+
+
 def _workload_name(posture: str | None = None) -> str:
+    """Policy name, else env, else the RFC default when a posture is on."""
+    name = _file_workload_name()
+    if name:
+        return name
     name = os.environ.get(_ENV_WORKLOAD, "").strip()
     if name:
         return name
@@ -229,7 +247,11 @@ def _write_home_document(data: dict[str, Any]) -> None:
 
 
 def _apply_posture(
-    data: dict[str, Any], posture: str, *, gateway_url: str | None = None
+    data: dict[str, Any],
+    posture: str,
+    *,
+    gateway_url: str | None = None,
+    workload_name: str | None = None,
 ) -> dict[str, Any]:
     caps = data.get("capabilities")
     if not isinstance(caps, dict):
@@ -239,14 +261,21 @@ def _apply_posture(
         if "agentcore" in caps:
             caps["agentcore"] = {"enabled": False}
         return data
-    existing = ""
+    existing_url = ""
+    existing_name = ""
     previous = caps.get("agentcore")
-    if isinstance(previous, dict) and isinstance(previous.get("gateway_url"), str):
-        existing = previous["gateway_url"].strip()
+    if isinstance(previous, dict):
+        if isinstance(previous.get("gateway_url"), str):
+            existing_url = previous["gateway_url"].strip()
+        if isinstance(previous.get("workload_name"), str):
+            existing_name = previous["workload_name"].strip()
     row: dict[str, Any] = {"enabled": True, "posture": posture}
-    chosen = existing if gateway_url is None else gateway_url
-    if chosen:
-        row["gateway_url"] = chosen
+    chosen_url = existing_url if gateway_url is None else gateway_url
+    if chosen_url:
+        row["gateway_url"] = chosen_url
+    chosen_name = existing_name if workload_name is None else workload_name
+    if chosen_name:
+        row["workload_name"] = chosen_name
     caps["agentcore"] = row
     if "boot" not in data or not isinstance(data.get("boot"), dict):
         data["boot"] = dict(_MINIMAL_BOOT)
@@ -369,6 +398,32 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             status=400,
         )
     posture = raw.strip().lower()
+    workload_name: str | None = None
+    if "workload_name" in body:
+        raw_name = body.get("workload_name")
+        if raw_name is None:
+            workload_name = ""
+        elif not isinstance(raw_name, str):
+            _audit(request, operation=OP_SAVE, outcome="denied", resources="bad_workload_name")
+            return web.json_response(
+                {
+                    "error": "workload_name must be a workload identity name or empty",
+                    "code": "invalid_agentcore_workload_name",
+                },
+                status=400,
+            )
+        else:
+            try:
+                workload_name = normalize_agentcore_workload_name(raw_name)
+            except ValueError:
+                _audit(request, operation=OP_SAVE, outcome="denied", resources="bad_workload_name")
+                return web.json_response(
+                    {
+                        "error": "workload_name must be 3–255 letters, digits, _ . or -",
+                        "code": "invalid_agentcore_workload_name",
+                    },
+                    status=400,
+                )
     gateway_url: str | None = None
     if "gateway_url" in body:
         raw_url = body.get("gateway_url")
@@ -419,7 +474,7 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             _audit(request, operation=OP_SAVE, outcome="success", resources="none")
             return web.json_response(payload)
         data = _read_home_document()
-        _apply_posture(data, posture, gateway_url=gateway_url)
+        _apply_posture(data, posture, gateway_url=gateway_url, workload_name=workload_name)
         _write_home_document(data)
     except PlatformCompositionError as exc:
         _audit(request, operation=OP_SAVE, outcome="denied", error=str(exc))

@@ -12220,6 +12220,8 @@
         "agent_identity_consent_title": "Connexion à la passerelle",
         "agent_identity_hint": "Identité AgentCore de cette crew. Workload permet d’atteindre la passerelle sans connexion. Login ne fournit que le MCP approuvé par la passerelle et exige qu’une personne se connecte. Off laisse cette crew inchangée.",
         "agent_identity_name": "Nom de la charge de travail",
+        "agent_identity_name_hint": "L’identité de charge de travail AgentCore au nom de laquelle cet équipage obtient des jetons. Elle doit déjà exister dans le compte.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "La politique de sécurité de cette crew est gérée par la flotte ou signée, elle ne peut donc pas être modifiée ici.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — MCP approuvé par la passerelle uniquement, connexion requise",

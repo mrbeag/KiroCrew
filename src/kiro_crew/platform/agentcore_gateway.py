@@ -457,6 +457,26 @@ def _log_unattended_denied(principal: SessionPrincipal, *, reason: str) -> None:
     )
 
 
+def _login_gateway_spec() -> dict[str, Any] | None:
+    """HTTPS Gateway URL for a login sidecar — never the workload SigV4 proxy.
+
+    ``gateway_mcp_spec()`` rewrites to ``127.0.0.1`` when env posture is
+    still ``workload`` (CFN leftover / pre-restart). kiro-cli cannot run
+    an OAuth challenge against that listener. Prefer the configured
+    https URL; fall back to an adapter spec only when it is https.
+    """
+    from kiro_crew.platform.agentcore_aws import resolved_gateway_url
+
+    real = resolved_gateway_url()
+    if real.startswith("https://"):
+        return sanitize_gateway_spec({"url": real})
+    sanitized = _gateway_spec_from_adapter()
+    url = str((sanitized or {}).get("url") or "")
+    if url.startswith("https://"):
+        return sanitized
+    return None
+
+
 def _write_unattended_deny_sidecar(principal: SessionPrincipal, *, reason: str) -> None:
     """Retract Gateway for this session without writing a token."""
     payload: dict[str, Any] = {
@@ -518,7 +538,7 @@ async def attach_gateway_inbound(principal: SessionPrincipal) -> Path | None:
     async def _vend() -> InboundToken | None:
         return await current_context().agent_identity.vend_gateway_inbound_token(principal)
 
-    sanitized = _gateway_spec_from_adapter()
+    sanitized = _login_gateway_spec()
     if sanitized is None:
         sel().log_api_access(
             caller="system",

@@ -12054,6 +12054,8 @@
         "agent_identity_consent_title": "गेटवे साइन-इन",
         "agent_identity_hint": "इस crew की AgentCore पहचान। Workload मोड बिना लॉगिन के गेटवे तक पहुँच देता है। Login केवल गेटवे-अनुमोदित MCP देता है और साइन-इन ज़रूरी है। Off इस crew को जैसा है वैसा छोड़ता है।",
         "agent_identity_name": "वर्कलोड नाम",
+        "agent_identity_name_hint": "The AgentCore workload identity this crew vends tokens as. It must already exist in the account.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "इस crew की सुरक्षा नीति फ़्लीट-प्रबंधित या हस्ताक्षरित है, इसलिए यहाँ बदली नहीं जा सकती।",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — केवल गेटवे-अनुमोदित MCP, साइन-इन ज़रूरी",

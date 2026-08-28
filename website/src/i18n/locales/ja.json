@@ -11887,6 +11887,8 @@
         "agent_identity_consent_title": "ゲートウェイのサインイン",
         "agent_identity_hint": "この crew の AgentCore 識別です。Workload はログインなしでゲートウェイに到達できます。Login はゲートウェイ承認済みの MCP のみを提供し、人のサインインが必要です。オフにするとこの crew は変わりません。",
         "agent_identity_name": "ワークロード名",
+        "agent_identity_name_hint": "このクルーがトークンを発行する AgentCore ワークロード ID。アカウントに既に存在する必要があります。",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "この crew のセキュリティポリシーはフリート管理または署名済みのため、ここでは変更できません。",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — ゲートウェイ承認済み MCP のみ、サインイン必須",

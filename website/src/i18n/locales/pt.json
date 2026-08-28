@@ -12219,6 +12219,8 @@
         "agent_identity_consent_title": "Login do gateway",
         "agent_identity_hint": "Identidade AgentCore desta crew. Workload permite chegar ao gateway sem login. Login oferece só o MCP aprovado pelo gateway e exige que uma pessoa entre. Off deixa esta crew inalterada.",
         "agent_identity_name": "Nome da carga de trabalho",
+        "agent_identity_name_hint": "A identidade de carga de trabalho do AgentCore com a qual este crew obtém tokens. Ela já deve existir na conta.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "A política de segurança desta crew é gerenciada pela frota ou assinada, então não pode ser alterada aqui.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — somente MCP aprovado pelo gateway; é necessário entrar",

@@ -4606,6 +4606,8 @@
         "agent_identity_consent_title": "Gateway sign-in",
         "agent_identity_hint": "This crew's AgentCore identity. Workload lets the crew reach the gateway without a login. Login vends only gateway-approved MCP and requires a human to sign in. Off leaves this crew unchanged.",
         "agent_identity_name": "Workload name",
+        "agent_identity_name_hint": "The AgentCore workload identity this crew vends tokens as. It must already exist in the account.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "This crew's security policy is fleet-managed or signed, so it cannot be changed here.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — gateway-approved MCP only, sign-in required",

@@ -850,6 +850,49 @@ same principal rules, same redaction. Do not start this phase to
 - Sensitive-path matchers must cover any later keystone file on both
   read and write/extract verbs.
 
+## Live verification findings (2026-08-28)
+
+Operator account `199621702461` / `us-east-1`, local IAM
+`trackout-email`. Tagged stack `kirocrew:e2e=true`: AWS_IAM Gateway
+`kirocrew-e2e-n9pk1rdrea` (READY), standalone identity `kirocrew-e2e`,
+Lambda target `echo-hello`.
+
+Verified live:
+
+- Control-plane catalog + Settings verify: READY, AWS_IAM, URL match,
+  `kirocrew-*` invoke scope, tools/list `echo-hello___echo_hello`.
+- Workload SigV4 localhost proxy: MCP initialize, `tools/list`, and
+  `tools/call` (`{"message":"hello proxy"}`).
+- Unsigned Gateway and WAT-as-`Authorization` both 401. WAT vends
+  (opaque). `vend_gateway_inbound_token` without a user JWT is `None`.
+- Policy `gateway_url` wins over `KIROCREW_AGENTCORE_GATEWAY_URL`.
+- Identity GET/PUT and catalog GET/verify (owner); app tokens 403.
+  Lambda Sync returns `not_syncable`.
+- Workload rebuild emits the proxy URL only. Login rebuild withholds.
+  Unattended login does not attach.
+
+Closed after the run:
+
+- GetGatewayTarget omits `targetType`; `mcp.lambda` was labeled `MCP`.
+  Catalog now infers `LAMBDA`.
+- Settings-only default name `kirocrew` does not match a created
+  `kirocrew-e2e` (`AccessDenied`: identity does not belong to caller
+  account). Settings now authors `capabilities.agentcore.workload_name`.
+- Login attach used `gateway_mcp_spec()`, which rewrites to the proxy
+  when env posture is still `workload`. Login sidecars now always use
+  the https Gateway URL.
+
+Still open (not v1 blockers):
+
+- Login inbound against a real `CUSTOM_JWT` Gateway + operator IdP
+  (needs a public OIDC discovery URL). Unit path is covered
+  (oauth_challenge sidecar; companion JWT → bearer).
+- MCP initialize on this Gateway does not return `mcp-session-id`;
+  `tools/list` still works without one.
+- Creating a Gateway also creates a service-linked identity that
+  refuses caller WAT. Crew must use a standalone workload identity.
+- Phase 5 `GetResourceOauth2Token` stays follow-on.
+
 ## Alternatives considered
 
 ### A. Companion-only, no core seam (rejected as the long-term shape)

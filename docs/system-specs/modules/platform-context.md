@@ -445,7 +445,12 @@ delegates to that same global. Wired sites:
   is inferred from `targetConfiguration` (`mcp.lambda` → `LAMBDA`,
   `mcp.mcpServer` → `MCP_SERVER`) because List/Get often omit
   `targetType`; Sync is offered only for DEFAULT MCP servers — a
-  Lambda target returns `not_syncable`. Default adapter stays empty. The
+  Lambda target returns `not_syncable`. Settings authors
+  `capabilities.agentcore.workload_name` (policy-first, then env, then
+  the RFC default `kirocrew`) so a named identity is not stuck on
+  leftover systemd `KIROCREW_AGENTCORE_WORKLOAD_NAME`. Login attach
+  writes the https Gateway URL, never the workload SigV4 proxy, even
+  when env posture is still `workload`. Default adapter stays empty. The
   public `probe_instance_invoke_gateway()` is a no-op False; a companion
   must override it — False is "no mismatch detected", not "IAM inbound
   is impossible."

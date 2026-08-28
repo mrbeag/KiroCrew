@@ -8,6 +8,8 @@ import json
 import sys
 import time
 
+import pytest
+
 from kiro_crew.platform.interfaces import SessionPrincipal
 
 
@@ -68,6 +70,27 @@ def test_opted_in_from_policy_posture_without_env_name(monkeypatch) -> None:
     monkeypatch.setattr(aws_mod, "authored_posture", lambda: "login")
     assert aws_mod.opted_in() is True
     assert aws_mod.resolved_workload_name() == aws_mod.DEFAULT_WORKLOAD_NAME
+
+
+def test_resolved_workload_name_prefers_policy_over_env(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setenv(aws_mod.ENV_WORKLOAD, "kirocrew")
+    monkeypatch.setattr(aws_mod, "authored_workload_name", lambda: "kirocrew-e2e")
+    assert aws_mod.resolved_workload_name() == "kirocrew-e2e"
+    monkeypatch.setattr(aws_mod, "authored_workload_name", lambda: "")
+    assert aws_mod.resolved_workload_name() == "kirocrew"
+
+
+def test_normalize_agentcore_workload_name() -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    assert aws_mod.normalize_agentcore_workload_name("") == ""
+    assert aws_mod.normalize_agentcore_workload_name("  kirocrew-e2e  ") == "kirocrew-e2e"
+    with pytest.raises(ValueError):
+        aws_mod.normalize_agentcore_workload_name("ab")
+    with pytest.raises(ValueError):
+        aws_mod.normalize_agentcore_workload_name("has space")
 
 
 def test_try_aws_returns_none_when_boto3_missing(monkeypatch) -> None:

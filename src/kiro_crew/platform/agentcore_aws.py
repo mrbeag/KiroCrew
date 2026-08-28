@@ -23,6 +23,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import sysconfig
@@ -55,6 +56,10 @@ EXTRA_CODE_FAILED = "install_failed"
 EXTRA_REQ_WHEEL = "kirocrew[agentcore]"
 # Same ceiling the CFN UserData Environment= line is pinned to.
 AGENTCORE_GATEWAY_URL_MAX = 512
+# CreateWorkloadIdentity name constraints (control-plane).
+WORKLOAD_NAME_MIN = 3
+WORKLOAD_NAME_MAX = 255
+_WORKLOAD_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 # boto3 client name (lazy). Not the ``bedrock-agentcore`` SDK package.
 _CLIENT = "bedrock-agentcore"
 _JWT_FALLBACK_TTL_SECS = 300.0
@@ -166,6 +171,38 @@ def authored_gateway_url() -> str:
         return ""
 
 
+def normalize_agentcore_workload_name(value: str | None) -> str:
+    """Return a stripped workload identity name, or empty.
+
+    Empty is legal (env / RFC default still apply). A present value must
+    match AgentCore CreateWorkloadIdentity: 3–255 of ``[A-Za-z0-9_.-]``.
+    """
+    name = (value or "").strip()
+    if not name:
+        return ""
+    if (
+        len(name) < WORKLOAD_NAME_MIN
+        or len(name) > WORKLOAD_NAME_MAX
+        or _WORKLOAD_NAME_RE.fullmatch(name) is None
+    ):
+        raise ValueError("agentcore_workload_name is not a usable workload identity name")
+    return name
+
+
+def authored_workload_name() -> str:
+    """Workload identity name authored in the standalone home file, if any."""
+    row = authored_agentcore_row()
+    if row is None:
+        return ""
+    raw = row.get("workload_name")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    try:
+        return normalize_agentcore_workload_name(raw)
+    except ValueError:
+        return ""
+
+
 def resolved_posture() -> str:
     """Env posture first (systemd / launch), else the standalone home file."""
     env = _env(ENV_POSTURE).lower()
@@ -210,7 +247,15 @@ def opted_in() -> bool:
 
 
 def resolved_workload_name() -> str:
-    """Env name, or the RFC default when a posture is already configured."""
+    """Policy name first (Settings), else launch env, else the RFC default.
+
+    A crew that names ``kirocrew-e2e`` in Settings must not stay stuck on
+    leftover ``KIROCREW_AGENTCORE_WORKLOAD_NAME=kirocrew`` (or empty →
+    default ``kirocrew``) and vend against an identity that does not exist.
+    """
+    authored = authored_workload_name()
+    if authored:
+        return authored
     name = _env(ENV_WORKLOAD)
     if name:
         return name

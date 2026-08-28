@@ -203,6 +203,28 @@ def test_put_none_does_not_install_extra(tmp_path: Path, monkeypatch) -> None:
     assert calls == []
 
 
+def test_put_writes_workload_name(tmp_path: Path, monkeypatch) -> None:
+    home = _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "workload_name": "kirocrew-e2e"})
+        )
+    )
+    assert resp.status == 200
+    data = json.loads(home.read_text(encoding="utf-8"))
+    assert data["capabilities"]["agentcore"]["workload_name"] == "kirocrew-e2e"
+    assert json.loads(resp.text)["workload_name"] == "kirocrew-e2e"
+
+
+def test_put_rejects_short_workload_name(tmp_path: Path, monkeypatch) -> None:
+    _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(_Req({"posture": "workload", "workload_name": "ab"}))
+    )
+    assert resp.status == 400
+    assert json.loads(resp.text)["code"] == "invalid_agentcore_workload_name"
+
+
 def test_put_writes_gateway_url(tmp_path: Path, monkeypatch) -> None:
     home = _isolate(monkeypatch, tmp_path)
     resp = asyncio.run(

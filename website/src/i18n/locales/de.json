@@ -12053,6 +12053,8 @@
         "agent_identity_consent_title": "Gateway-Anmeldung",
         "agent_identity_hint": "AgentCore-Identität dieser Crew. Workload erreicht das Gateway ohne Anmeldung. Login stellt nur vom Gateway genehmigtes MCP bereit und erfordert eine menschliche Anmeldung. Aus lässt diese Crew unverändert.",
         "agent_identity_name": "Workload-Name",
+        "agent_identity_name_hint": "Die AgentCore-Workload-Identität, als die diese Crew Tokens ausstellt. Sie muss im Konto bereits existieren.",
+        "agent_identity_name_placeholder": "kirocrew",
         "agent_identity_not_writable": "Die Sicherheitsrichtlinie dieser Crew wird flottenweit verwaltet oder ist signiert und kann hier nicht geändert werden.",
         "agent_identity_posture": "Identity",
         "agent_identity_posture_login": "Login — nur vom Gateway genehmigtes MCP, Anmeldung erforderlich",
