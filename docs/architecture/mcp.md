@@ -173,7 +173,10 @@ ordinary merge of Kiro defaults. The proxy prefers port `18765`
 (`KIROCREW_AGENTCORE_PROXY_PORT` overrides; bind failure falls back
 to ephemeral). After a gateway restart the agent-file port may be
 stale; `session_gateway_servers` injects the live loopback listen
-URL onto `session/new` (never the unsigned https hostname). Companion extras that carry `headers` / `Authorization`
+URL onto `session/new` (never the unsigned https hostname). Each
+HTTP element is `{name, type: "http", url, headers}` — kiro-cli's
+untagged `McpServer` rejects `{name, url}` and `{name, disabled: true}`.
+A deny sidecar injects a disabled HTTP placeholder. Companion extras that carry `headers` / `Authorization`
 are stripped before the agent file is written. Gateway/token work stays
 behind the three-conjunct identity probe (adapter AND capability AND
 known posture). Gateway is unpooled: each session has its own inbound

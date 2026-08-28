@@ -432,7 +432,11 @@ delegates to that same global. Wired sites:
   when identity is on, that helper injects the live loopback SigV4
   listen URL so session/new outranks a stale agent-file port after a
   gateway restart. It never injects the unsigned https Gateway
-  hostname. An expired inbound sidecar
+  hostname. Each injected HTTP element carries ``type: http`` and a
+  ``headers`` array (empty when there is no bearer) so kiro-cli's
+  untagged ``McpServer`` deserializes; a deny sidecar injects a
+  disabled HTTP placeholder rather than `{name, disabled: true}`.
+  An expired inbound sidecar
   drains that session's ACP child (`SessionManager.remove`, map
   preserved) before re-attach — Gateway is unpooled, so this does not
   blue-green the mcp_gateway pool.   Unattended login never

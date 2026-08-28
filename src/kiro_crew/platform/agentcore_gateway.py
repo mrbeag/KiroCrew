@@ -85,6 +85,13 @@ _URL_ONLY_KEYS = frozenset({"url", "type", "timeout", "disabledTools", "autoAppr
 # Hosts the SigV4 proxy may advertise. https is never loopback-listen.
 _LOOPBACK_LISTEN_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
+# kiro-cli 2.20.1 ``session/new`` deserializes an untagged ``McpServer``.
+# HTTP requires ``type`` plus a ``headers`` array (empty is fine). A
+# deny-only ``{name, disabled: true}`` is rejected, so retract uses a
+# disabled HTTP element. Port 1 is never the SigV4 proxy.
+ACP_HTTP_TYPE = "http"
+ACP_DENIED_PLACEHOLDER_URL = "http://127.0.0.1:1/mcp"
+
 
 def strip_secret_spec_keys(spec: Mapping[str, Any]) -> dict[str, Any]:
     """Copy *spec* without header / Authorization keys."""
@@ -416,6 +423,29 @@ async def drain_expired_gateway_transport(sessions: Any, session_key: str) -> bo
     return True
 
 
+def acp_http_server(
+    url: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+    disabled: bool = False,
+    name: str = GATEWAY_SERVER_NAME,
+) -> dict[str, Any]:
+    """ACP ``session/new`` HTTP element kiro-cli will deserialize.
+
+    ``headers`` is always present (empty list when there is no bearer).
+    """
+    pairs = headers or {}
+    shaped: dict[str, Any] = {
+        "name": name,
+        "type": ACP_HTTP_TYPE,
+        "url": url,
+        "headers": [{"name": str(key), "value": str(value)} for key, value in pairs.items()],
+    }
+    if disabled:
+        shaped["disabled"] = True
+    return shaped
+
+
 def is_loopback_listen_url(url: str) -> bool:
     """True for the SigV4 proxy listen URL. Never the unsigned Gateway hostname."""
     if not url:
@@ -447,7 +477,7 @@ def _workload_live_proxy_servers() -> list[dict[str, Any]]:
     url = str((sanitized or {}).get("url") or "")
     if not is_loopback_listen_url(url):
         return []
-    return [{"name": GATEWAY_SERVER_NAME, "url": url}]
+    return [acp_http_server(url)]
 
 
 def session_gateway_servers(session_key: str) -> list[dict[str, Any]]:
@@ -466,21 +496,22 @@ def session_gateway_servers(session_key: str) -> list[dict[str, Any]]:
         return _workload_live_proxy_servers()
     if data.get("denied") is True:
         # Session inject outranks the same-named agent-file entry (kiro-cli).
-        # Workload user/OBO unattended retracts Gateway this way.
-        return [{"name": GATEWAY_SERVER_NAME, "disabled": True}]
+        # Workload user/OBO unattended retracts Gateway this way. kiro-cli
+        # rejects ``{name, disabled: true}``; a disabled HTTP element is
+        # the legal retract.
+        return [acp_http_server(ACP_DENIED_PLACEHOLDER_URL, disabled=True)]
     url = data.get("url")
     headers = data.get("headers")
     if not isinstance(url, str) or not url:
         return []
-    shaped: dict[str, Any] = {
-        "name": str(data.get("name") or GATEWAY_SERVER_NAME),
-        "url": url,
-    }
-    if isinstance(headers, dict) and headers:
-        shaped["headers"] = [
-            {"name": str(key), "value": str(value)} for key, value in headers.items()
-        ]
-    return [shaped]
+    header_map = headers if isinstance(headers, dict) else None
+    return [
+        acp_http_server(
+            url,
+            headers=header_map,
+            name=str(data.get("name") or GATEWAY_SERVER_NAME),
+        )
+    ]
 
 
 def _authorization_value(token: InboundToken) -> str:

@@ -344,7 +344,7 @@ and a core-derived `raw_id`, the same function binds the principal:
    (never the unsigned https Gateway hostname) — except an unattended `cron:` /
    `taskrunner:` session whose companion `status()` reports a user/OBO
    credential without a vaulted owner token: that writes a deny sidecar
-   so `session/new` injects `{disabled: true}` and retracts the
+   so `session/new` injects a disabled HTTP ACP element and retracts the
    agent-file Gateway. A bind/attach exception on those unattended keys
    writes the same deny sidecar (`reason=attach_failed`) rather than
    leaving the agent-file Gateway reachable. Login posture never

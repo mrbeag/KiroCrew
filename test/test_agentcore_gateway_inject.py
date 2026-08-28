@@ -197,7 +197,14 @@ def test_login_vend_none_attaches_url_only_oauth_challenge(
         assert sidecar["oauth_challenge"] is True
         assert "headers" not in sidecar
         injected = session_gateway_servers("dashboard:1")
-        assert injected == [{"name": "agentcore-gateway", "url": _GATEWAY_URL}]
+        assert injected == [
+            {
+                "name": "agentcore-gateway",
+                "type": "http",
+                "url": _GATEWAY_URL,
+                "headers": [],
+            }
+        ]
 
     import asyncio
 
@@ -343,6 +350,7 @@ def test_login_vend_writes_sidecar_not_agent_file(
     assert sidecar["url"] == _GATEWAY_URL
     injected = session_gateway_servers("dashboard:1")
     assert injected[0]["url"] == _GATEWAY_URL
+    assert injected[0]["type"] == "http"
     assert injected[0]["headers"][0]["value"] == f"Bearer {_TOKEN}"
     assert _TOKEN not in (kiro_dir / "kirocrew.json").read_text(encoding="utf-8")
 
@@ -398,6 +406,23 @@ def test_token_never_appears_in_logs_or_sel(caplog: pytest.LogCaptureFixture) ->
     assert inbound[0].get("outcome") == "ok"
 
 
+def test_acp_http_server_always_has_type_and_headers() -> None:
+    from kiro_crew.platform.agentcore_gateway import (
+        ACP_DENIED_PLACEHOLDER_URL,
+        ACP_HTTP_TYPE,
+        acp_http_server,
+    )
+
+    live = acp_http_server("http://127.0.0.1:18765/mcp")
+    assert live["type"] == ACP_HTTP_TYPE
+    assert live["headers"] == []
+    bearer = acp_http_server(_GATEWAY_URL, headers={"Authorization": f"Bearer {_TOKEN}"})
+    assert bearer["headers"] == [{"name": "Authorization", "value": f"Bearer {_TOKEN}"}]
+    denied = acp_http_server(ACP_DENIED_PLACEHOLDER_URL, disabled=True)
+    assert denied["disabled"] is True
+    assert denied["headers"] == []
+
+
 def test_is_loopback_listen_url() -> None:
     from kiro_crew.platform.agentcore_gateway import is_loopback_listen_url
 
@@ -426,7 +451,9 @@ def test_workload_session_injects_live_loopback_proxy() -> None:
     import asyncio
 
     asyncio.run(_run())
-    assert session_gateway_servers("dashboard:1") == [{"name": "agentcore-gateway", "url": listen}]
+    from kiro_crew.platform.agentcore_gateway import acp_http_server
+
+    assert session_gateway_servers("dashboard:1") == [acp_http_server(listen)]
 
 
 def test_workload_session_never_injects_unsigned_https() -> None:

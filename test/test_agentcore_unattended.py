@@ -126,7 +126,6 @@ async def test_login_dashboard_still_attaches_when_vend_works() -> None:
 @pytest.mark.asyncio
 async def test_workload_user_without_vault_retracts_gateway() -> None:
     from kiro_crew.platform.agentcore_gateway import (
-        GATEWAY_SERVER_NAME,
         attach_gateway_inbound,
         inbound_sidecar_path,
         session_gateway_servers,
@@ -139,7 +138,9 @@ async def test_workload_user_without_vault_retracts_gateway() -> None:
     assert sidecar["denied"] is True
     assert _TOKEN not in json.dumps(sidecar)
     injected = session_gateway_servers("cron:job1")
-    assert injected == [{"name": GATEWAY_SERVER_NAME, "disabled": True}]
+    from kiro_crew.platform.agentcore_gateway import ACP_DENIED_PLACEHOLDER_URL, acp_http_server
+
+    assert injected == [acp_http_server(ACP_DENIED_PLACEHOLDER_URL, disabled=True)]
     events = [
         e for e in sel().recent(limit=50) if e.get("operation") == "agentcore.unattended_denied"
     ]
@@ -167,7 +168,6 @@ async def test_workload_m2m_cron_keeps_agent_file_gateway() -> None:
 @pytest.mark.asyncio
 async def test_workload_m2m_cron_injects_live_loopback_proxy() -> None:
     from kiro_crew.platform.agentcore_gateway import (
-        GATEWAY_SERVER_NAME,
         attach_gateway_inbound,
         inbound_sidecar_path,
         session_gateway_servers,
@@ -184,7 +184,9 @@ async def test_workload_m2m_cron_injects_live_loopback_proxy() -> None:
     )
     assert await attach_gateway_inbound(_cron()) is None
     assert inbound_sidecar_path("cron:job1").exists() is False
-    assert session_gateway_servers("cron:job1") == [{"name": GATEWAY_SERVER_NAME, "url": listen}]
+    from kiro_crew.platform.agentcore_gateway import acp_http_server
+
+    assert session_gateway_servers("cron:job1") == [acp_http_server(listen)]
 
 
 @pytest.mark.asyncio
@@ -247,7 +249,6 @@ class _Sessions:
 async def test_unattended_bind_attach_error_writes_deny_sidecar(monkeypatch) -> None:
     from kiro_crew.platform.agent_identity import bind_session_principal
     from kiro_crew.platform.agentcore_gateway import (
-        GATEWAY_SERVER_NAME,
         inbound_sidecar_path,
         session_gateway_servers,
     )
@@ -270,7 +271,9 @@ async def test_unattended_bind_attach_error_writes_deny_sidecar(monkeypatch) -> 
     assert sidecar.get("reason") == "attach_failed"
     assert _TOKEN not in json.dumps(sidecar)
     injected = session_gateway_servers("cron:job1")
-    assert injected == [{"name": GATEWAY_SERVER_NAME, "disabled": True}]
+    from kiro_crew.platform.agentcore_gateway import ACP_DENIED_PLACEHOLDER_URL, acp_http_server
+
+    assert injected == [acp_http_server(ACP_DENIED_PLACEHOLDER_URL, disabled=True)]
     events = [
         e for e in sel().recent(limit=50) if e.get("operation") == "agentcore.unattended_denied"
     ]

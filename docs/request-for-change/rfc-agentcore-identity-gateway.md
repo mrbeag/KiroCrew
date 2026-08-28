@@ -941,6 +941,20 @@ Closed on the OOTB session-inject pass:
   survives a restart when that port is free.
   `KIROCREW_AGENTCORE_PROXY_PORT` overrides; bind failure falls
   back to ephemeral and session inject carries the live URL.
+- Isolated kiro-cli 2.20.1 `session/new` rejects `{name, url}` and
+  `{name, disabled: true}` (`untagged enum McpServer`). HTTP inject
+  is now `{name, type: "http", url, headers}` (empty headers when
+  there is no bearer). Deny retracts with a disabled HTTP
+  placeholder. Confirmed: `type: http` + `headers: []` accepts
+  `session/new`; the earlier shape closed the connection. Live
+  inject+MCP under assumed-role `kirocrew-e2e-instance` bound
+  `127.0.0.1:18765`, listed both targets' tools, and
+  `echo-hello___echo_hello` returned `hello ootb`.   Isolated
+  `KIRO_HOME` did not write `~/.kiro/agents`. Isolated kiro-cli
+  2.20.1 then accepted `session/new`, overrode the stale agent-file
+  port, launched `agentcore-gateway` over unauthenticated HTTP to
+  the SigV4 proxy, and emitted
+  `_kiro.dev/mcp/server_initialized`.
 
 Still open (not v1 blockers):
 

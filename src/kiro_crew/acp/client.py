@@ -2278,7 +2278,8 @@ class AcpClient:
         that sidecar, never in the agent file. Workload posture (no sidecar)
         injects the live loopback SigV4 listen URL so session/new outranks a
         stale agent-file port after a gateway restart; the unsigned Gateway
-        hostname is never injected.
+        hostname is never injected. HTTP elements are
+        ``{name, type: http, url, headers}`` so kiro-cli deserializes them.
         """
         servers = pooled_session_servers(self._mcp_gateway_overlay, self._agent, self._channel_id)
         if self._session_key:
