@@ -75,6 +75,7 @@ def _isolate(
             "reachable": True,
             "skip_reason": None,
             "items": [{"name": "search", "description": "find things"}],
+            "via": inspect.TOOLS_VIA_PROXY,
         },
     )
     monkeypatch.setattr(
@@ -148,9 +149,85 @@ def test_snapshot_ok_lists_targets_and_tools(monkeypatch: pytest.MonkeyPatch) ->
     assert "tools" in ids
     assert "identity" in ids
     invoke = next(c for c in snap["checks"] if c["id"] == "invoke_scope")
-    assert invoke["ok"] is False
-    assert invoke["detail"] == "not_kirocrew_prefixed"
-    assert all(c["ok"] for c in snap["checks"] if c["id"] != "invoke_scope")
+    assert invoke["ok"] is True
+    assert invoke["detail"] == "ok"
+    assert all(c["ok"] for c in snap["checks"])
+
+
+def test_invoke_scope_proved_via_proxy() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="workload",
+        gateway_id="demo-gw",
+        tools={"reachable": True, "via": inspect.TOOLS_VIA_PROXY},
+    )
+    assert ok is True
+    assert detail == "ok"
+
+
+def test_invoke_scope_unproved_non_prefix() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="workload",
+        gateway_id="demo-gw",
+        tools={
+            "reachable": False,
+            "via": None,
+            "skip_reason": inspect.TOOLS_SKIP_UNREACHABLE,
+        },
+    )
+    assert ok is False
+    assert detail == "not_kirocrew_prefixed"
+
+
+def test_invoke_scope_reachable_without_via_is_not_proved() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="workload",
+        gateway_id="demo-gw",
+        tools={"reachable": True},
+    )
+    assert ok is False
+    assert detail == "not_kirocrew_prefixed"
+
+
+def test_invoke_scope_prefix_fallback() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="workload",
+        gateway_id="kirocrew-e2e-n9pk1rdrea",
+        tools={
+            "reachable": False,
+            "via": None,
+            "skip_reason": inspect.TOOLS_SKIP_UNREACHABLE,
+        },
+    )
+    assert ok is True
+    assert detail == "ok"
+
+
+def test_invoke_scope_denied_even_on_prefix() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="workload",
+        gateway_id="kirocrew-e2e-n9pk1rdrea",
+        tools={
+            "reachable": False,
+            "via": None,
+            "skip_reason": inspect.TOOLS_DENIED,
+        },
+    )
+    assert ok is False
+    assert detail == "invoke_denied"
+
+
+def test_invoke_scope_login_skips() -> None:
+    ok, detail = inspect._invoke_scope(
+        posture="login",
+        gateway_id="demo-gw",
+        tools={
+            "reachable": False,
+            "via": None,
+            "skip_reason": inspect.TOOLS_SKIP_LOGIN,
+        },
+    )
+    assert ok is True
+    assert detail == "ok"
 
 
 def test_identity_check_surfaces_service_linked(monkeypatch: pytest.MonkeyPatch) -> None:

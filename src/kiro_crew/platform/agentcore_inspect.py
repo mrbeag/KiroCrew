@@ -153,13 +153,6 @@ def inspect_snapshot(*, include_tools: bool = True) -> dict[str, Any]:
 
     gateway = _gateway_view(raw_gateway, ref)
     targets, targets_error = _list_targets(client, ref["id"])
-    checks = _build_checks(
-        url=url,
-        ref=ref,
-        posture=posture,
-        gateway=gateway,
-        extra=True,
-    )
     tools = _empty_tools(TOOLS_SKIP_UNREACHABLE)
     if include_tools:
         tools = _list_tools(
@@ -168,6 +161,15 @@ def inspect_snapshot(*, include_tools: bool = True) -> dict[str, Any]:
             posture=posture,
             authorizer=str(gateway.get("authorizer_type") or ""),
         )
+    checks = _build_checks(
+        url=url,
+        ref=ref,
+        posture=posture,
+        gateway=gateway,
+        extra=True,
+        tools=tools,
+    )
+    if include_tools:
         checks.append(_tools_check(tools))
     checks.append(_identity_check())
     return _scrub(
@@ -469,6 +471,33 @@ def _iso_time(value: Any) -> str:
     return text
 
 
+def _invoke_scope(
+    *,
+    posture: str,
+    gateway_id: str,
+    tools: dict[str, Any] | None,
+) -> tuple[bool, str]:
+    """Whether this crew can call this Gateway.
+
+    Proved when tools/list just went through the SigV4 proxy
+    (``InvokeGateway`` succeeded for this credential). Prefix is a
+    fallback when tools were not proved. Login skips — JWT inbound,
+    not IAM Invoke. A data-plane 401/403 is invoke-not even on a
+    ``kirocrew-*`` id. This does not widen IAM: CFN instance + successor
+    still grant Invoke only on ``gateway/kirocrew-*``.
+    """
+    if posture == "login":
+        return True, "ok"
+    payload = tools or {}
+    if payload.get("skip_reason") == TOOLS_DENIED:
+        return False, "invoke_denied"
+    if bool(payload.get("reachable")) and payload.get("via") == TOOLS_VIA_PROXY:
+        return True, "ok"
+    if gateway_id.startswith(INVOKE_ARN_PREFIX):
+        return True, "ok"
+    return False, "not_kirocrew_prefixed"
+
+
 def _build_checks(
     *,
     url: str,
@@ -476,13 +505,14 @@ def _build_checks(
     posture: str,
     gateway: dict[str, Any],
     extra: bool,
+    tools: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     authorizer = str(gateway.get("authorizer_type") or "")
     status = str(gateway.get("status") or "")
     reported = str(gateway.get("gateway_url") or "")
     url_match = _urls_match(url, reported) if reported else True
     authorizer_ok = _authorizer_matches(posture, authorizer)
-    invoke_ok = ref["id"].startswith(INVOKE_ARN_PREFIX)
+    invoke_ok, invoke_detail = _invoke_scope(posture=posture, gateway_id=ref["id"], tools=tools)
     return [
         {"id": "url", "ok": True, "detail": "ok"},
         {"id": "extra", "ok": extra, "detail": "ok" if extra else SNAPSHOT_EXTRA_MISSING},
@@ -504,8 +534,8 @@ def _build_checks(
         },
         {
             "id": "invoke_scope",
-            "ok": invoke_ok or posture == "login",
-            "detail": "ok" if invoke_ok else "not_kirocrew_prefixed",
+            "ok": invoke_ok,
+            "detail": invoke_detail,
         },
     ]
 

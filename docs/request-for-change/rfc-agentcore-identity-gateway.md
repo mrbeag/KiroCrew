@@ -901,9 +901,12 @@ Closed on the production-ready pass:
   without a name is 400 `workload_name_required`; the UI disables
   Save until a name is set. Launch env posture without a systemd
   name still uses the RFC default.
-- Invoke-scope stays `kirocrew-*` (successor boundary). A pasted
-  non-prefixed Gateway is inspect-ok and invoke-not, with a
-  catalog hint (`not_kirocrew_prefixed`).
+- Successor-boundary Invoke stays `kirocrew-*`. Catalog
+  `invoke_scope` is now credential-proved: tools/list through the
+  SigV4 proxy greens any Gateway this crew can actually call, so a
+  pasted existing Gateway is not falsely red. Prefix is the
+  fallback when tools were not proved. A data-plane 401/403 is
+  `invoke_denied` even on a `kirocrew-*` id.
 - Instance-role-only IAM (`kirocrew-e2e-instance` assumed from
   `trackout-email`, policy from `agentcore_instance_policy_document(
   "workload")`): WAT `ok`, all nine catalog checks green, tools/list
@@ -955,6 +958,15 @@ Closed on the OOTB session-inject pass:
   port, launched `agentcore-gateway` over unauthenticated HTTP to
   the SigV4 proxy, and emitted
   `_kiro.dev/mcp/server_initialized`.
+
+Closed on the existing-Gateway honesty pass:
+
+- Catalog `invoke_scope` no longer fails a working non-`kirocrew-*`
+  Gateway. If tools/list just succeeded via the SigV4 proxy, this
+  credential invoked it. Prefix remains the unproved fallback.
+  Settings copy is credential-honest (this crew's AWS credentials),
+  not "instance role only." `invoke_denied` names a 401/403 on
+  Invoke. IAM documents are unchanged.
 
 Still open (not v1 blockers):
 

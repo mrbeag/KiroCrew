@@ -452,7 +452,14 @@ delegates to that same global. Wired sites:
   workload+IAM through the same localhost SigV4 proxy kiro-cli uses —
   a green tools check is the agent path, not a direct signed POST to
   the Gateway hostname; `proxy_unavailable` when that listener cannot
-  start; login skips tools with a sign-in hint). Workload
+  start; login skips tools with a sign-in hint). Catalog
+  `invoke_scope` is credential-proved: green when tools/list
+  reached the Gateway through that proxy, or when the Gateway id is
+  `kirocrew-*` and tools were not proved, or on login (JWT inbound).
+  A data-plane 401/403 is invoke-not even on a `kirocrew-*` id
+  (`invoke_denied`). CFN instance + successor still grant Invoke
+  only on `gateway/kirocrew-*` — this check does not widen IAM.
+  Workload
   catalog also probes `GetWorkloadAccessToken` and discards the body
   so a wrong or Gateway-linked identity name shows as the `identity`
   check (`service_linked` / `identity_denied` / `not_named`); login

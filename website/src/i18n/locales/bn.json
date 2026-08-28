@@ -12084,7 +12084,7 @@
         "agent_identity_check_ready": "Gateway is ready",
         "agent_identity_check_authorizer": "Inbound auth matches this identity",
         "agent_identity_check_url_match": "Saved URL matches this Gateway",
-        "agent_identity_check_invoke_scope": "Instance role can invoke this Gateway",
+        "agent_identity_check_invoke_scope": "এই crew এই গেটওয়েকে কল করতে পারে",
         "agent_identity_check_tools": "Tools are reachable",
         "agent_identity_check_identity": "এই crew একটি ওয়ার্কলোড টোকেন ইস্যু করতে পারে",
         "agent_identity_checks": "Connection checks",
@@ -12104,12 +12104,12 @@
         "agent_identity_code_no_url": "Save a Gateway URL to inspect it.",
         "agent_identity_code_extra_missing": "Install AgentCore support on this gateway, then verify again.",
         "agent_identity_code_unusable_url": "That URL is not a usable AgentCore Gateway address.",
-        "agent_identity_code_aws_denied": "This instance role cannot read the Gateway. Attach the inspect grant, then retry.",
+        "agent_identity_code_aws_denied": "এই crew-এর AWS পরিচয়পত্র গেটওয়ে পড়তে পারে না। inspect অনুমতি যোগ করে আবার চেষ্টা করুন।",
         "agent_identity_code_not_found": "AWS does not have a Gateway at this URL.",
         "agent_identity_code_aws_error": "Could not reach AWS. Check the gateway logs.",
         "agent_identity_code_service_linked": "সেই নাম গেটওয়ের সার্ভিস-লিঙ্কড পরিচয়। crew-এর স্বতন্ত্র ওয়ার্কলোড পরিচয় দরকার।",
         "agent_identity_code_not_named": "এই crew-এর AgentCore পরিচয়ের নাম সেট করুন, তারপর আবার যাচাই করুন।",
-        "agent_identity_code_identity_denied": "AWS এই পরিচয়ের নামের জন্য টোকেন প্রত্যাখ্যান করেছে। স্বতন্ত্র নাম এবং ইনস্ট্যান্স রোল অনুমতি নিশ্চিত করুন।",
+        "agent_identity_code_identity_denied": "AWS এই পরিচয়ের নামের জন্য টোকেন প্রত্যাখ্যান করেছে। স্বতন্ত্র নাম নিশ্চিত করুন এবং এই crew-এর AWS পরিচয়পত্র যে GetWorkloadAccessToken করতে পারে তা নিশ্চিত করুন।",
         "agent_identity_code_identity_not_found": "AWS-এ এই নামের কোনো ওয়ার্কলোড পরিচয় নেই।",
         "agent_identity_code_identity_error": "ওয়ার্কলোড টোকেন ইস্যু করা যায়নি। গেটওয়ে লগ দেখুন।",
         "agent_identity_copy_debug": "Copy debug summary",
@@ -12265,7 +12265,8 @@
           "ineffective_description": "এই নামগুলো বিশ্বাসযোগ্য হিসেবে সংরক্ষিত হয়েছিল, কিন্তু Kiro Crew এগুলো গ্রহণ করে না, তাই অ্যাপগুলো এখনও ব্লক আছে। তালিকা পরিষ্কার করতে এগুলো সরিয়ে দিন।"
         },
         "agent_identity_name_required": "পরিচয় চালু করার আগে ওয়ার্কলোড নাম সেট করুন।",
-        "agent_identity_code_not_kirocrew": "এই গেটওয়ের আইডি kirocrew- দিয়ে শুরু নয়। ইনস্ট্যান্স রোল এটি পরীক্ষা করতে পারে, কিন্তু কল শুধু kirocrew-* গেটওয়েতে সীমাবদ্ধ।",
+        "agent_identity_code_not_kirocrew": "এই গেটওয়েকে কল করা যায়নি। এই crew যে ভূমিকা ব্যবহার করে তাতে এই গেটওয়ের জন্য bedrock-agentcore:InvokeGateway যোগ করুন। kirocrew ক্লাউড লঞ্চ ভূমিকা শুধু kirocrew-* গেটওয়ে দেয়।",
+        "agent_identity_code_invoke_denied": "গেটওয়ে কল করার সময় এই crew-এর AWS পরিচয়পত্র প্রত্যাখ্যান হয়েছে। এই crew যে ভূমিকা ব্যবহার করে তাতে এই গেটওয়ের জন্য bedrock-agentcore:InvokeGateway যোগ করুন।",
         "agent_identity_code_proxy_unavailable": "স্থানীয় গেটওয়ে প্রক্সি চালু করা যায়নি। এই গেটওয়েতে AgentCore সমর্থন ইনস্টল করুন, তারপর আবার যাচাই করুন।"
       },
       "shortcutsPanel": {

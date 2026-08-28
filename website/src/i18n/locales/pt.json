@@ -12249,7 +12249,7 @@
         "agent_identity_check_ready": "O gateway está pronto",
         "agent_identity_check_authorizer": "A autenticação de entrada corresponde a esta identidade",
         "agent_identity_check_url_match": "O URL salvo corresponde a este gateway",
-        "agent_identity_check_invoke_scope": "A função da instância pode invocar este gateway",
+        "agent_identity_check_invoke_scope": "Esta crew pode chamar este gateway",
         "agent_identity_check_tools": "As ferramentas estão acessíveis",
         "agent_identity_check_identity": "Esta crew pode emitir um token de carga de trabalho",
         "agent_identity_checks": "Verificações de conexão",
@@ -12269,12 +12269,12 @@
         "agent_identity_code_no_url": "Salve um URL de gateway para inspecioná-lo.",
         "agent_identity_code_extra_missing": "Instale o suporte ao AgentCore neste gateway e verifique novamente.",
         "agent_identity_code_unusable_url": "Esse URL não é um endereço de gateway AgentCore utilizável.",
-        "agent_identity_code_aws_denied": "Esta função de instância não pode ler o gateway. Anexe a permissão de inspeção e tente novamente.",
+        "agent_identity_code_aws_denied": "As credenciais da AWS desta crew não conseguem ler o gateway. Anexe a permissão de inspeção e tente novamente.",
         "agent_identity_code_not_found": "A AWS não tem um gateway neste URL.",
         "agent_identity_code_aws_error": "Não foi possível alcançar a AWS. Verifique os logs do gateway.",
         "agent_identity_code_service_linked": "Esse nome é a identidade vinculada ao serviço do gateway. A crew precisa de uma identidade de carga de trabalho independente.",
         "agent_identity_code_not_named": "Defina o nome de identidade AgentCore desta crew e verifique de novo.",
-        "agent_identity_code_identity_denied": "A AWS recusou um token para este nome de identidade. Confirme o nome independente e a permissão da função da instância.",
+        "agent_identity_code_identity_denied": "A AWS recusou um token para este nome de identidade. Confirme o nome independente e que as credenciais da AWS desta crew possam usar GetWorkloadAccessToken.",
         "agent_identity_code_identity_not_found": "A AWS não tem uma identidade de carga de trabalho com este nome.",
         "agent_identity_code_identity_error": "Não foi possível emitir um token de carga de trabalho. Verifique os logs do gateway.",
         "agent_identity_copy_debug": "Copiar resumo de depuração",
@@ -12430,7 +12430,8 @@
           "ineffective_description": "Esses nomes foram salvos como confiáveis, mas o Kiro Crew não os aceita, então os apps continuam bloqueados. Remova-os para limpar a lista."
         },
         "agent_identity_name_required": "Defina um nome de carga de trabalho antes de ativar a identidade.",
-        "agent_identity_code_not_kirocrew": "O id deste gateway não começa com kirocrew-. A função da instância pode inspecioná-lo, mas a invocação continua limitada a gateways kirocrew-*.",
+        "agent_identity_code_not_kirocrew": "Não foi possível invocar este gateway. Anexe bedrock-agentcore:InvokeGateway neste gateway à função que esta crew usa. Uma função de lançamento kirocrew na nuvem concede apenas gateways kirocrew-*.",
+        "agent_identity_code_invoke_denied": "As credenciais da AWS desta crew foram recusadas ao chamar o gateway. Anexe bedrock-agentcore:InvokeGateway neste gateway à função que esta crew usa.",
         "agent_identity_code_proxy_unavailable": "O proxy local do gateway não pôde ser iniciado. Instale o suporte ao AgentCore neste gateway e verifique novamente."
       },
       "shortcutsPanel": {

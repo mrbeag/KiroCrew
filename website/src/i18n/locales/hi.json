@@ -12084,7 +12084,7 @@
         "agent_identity_check_ready": "Gateway is ready",
         "agent_identity_check_authorizer": "Inbound auth matches this identity",
         "agent_identity_check_url_match": "Saved URL matches this Gateway",
-        "agent_identity_check_invoke_scope": "Instance role can invoke this Gateway",
+        "agent_identity_check_invoke_scope": "यह crew इस गेटवे को कॉल कर सकता है",
         "agent_identity_check_tools": "Tools are reachable",
         "agent_identity_check_identity": "यह crew वर्कलोड टोकन जारी कर सकती है",
         "agent_identity_checks": "Connection checks",
@@ -12104,12 +12104,12 @@
         "agent_identity_code_no_url": "Save a Gateway URL to inspect it.",
         "agent_identity_code_extra_missing": "Install AgentCore support on this gateway, then verify again.",
         "agent_identity_code_unusable_url": "That URL is not a usable AgentCore Gateway address.",
-        "agent_identity_code_aws_denied": "This instance role cannot read the Gateway. Attach the inspect grant, then retry.",
+        "agent_identity_code_aws_denied": "इस crew के AWS क्रेडेंशियल गेटवे नहीं पढ़ सकते। inspect अनुमति जोड़ें, फिर पुनः प्रयास करें।",
         "agent_identity_code_not_found": "AWS does not have a Gateway at this URL.",
         "agent_identity_code_aws_error": "Could not reach AWS. Check the gateway logs.",
         "agent_identity_code_service_linked": "वह नाम गेटवे की सेवा-लिंक पहचान है। crew को स्वतंत्र वर्कलोड पहचान चाहिए।",
         "agent_identity_code_not_named": "इस crew का AgentCore पहचान नाम सेट करें, फिर फिर से जाँचें।",
-        "agent_identity_code_identity_denied": "AWS ने इस पहचान नाम के लिए टोकन अस्वीकार किया। स्वतंत्र नाम और इंस्टेंस भूमिका अनुमति की पुष्टि करें।",
+        "agent_identity_code_identity_denied": "AWS ने इस पहचान नाम के लिए टोकन अस्वीकार किया। स्वतंत्र नाम की पुष्टि करें और सुनिश्चित करें कि इस crew के AWS क्रेडेंशियल GetWorkloadAccessToken कर सकते हैं।",
         "agent_identity_code_identity_not_found": "AWS के पास इस नाम की कोई वर्कलोड पहचान नहीं है।",
         "agent_identity_code_identity_error": "वर्कलोड टोकन जारी नहीं हो सका। गेटवे लॉग देखें।",
         "agent_identity_copy_debug": "Copy debug summary",
@@ -12265,7 +12265,8 @@
           "ineffective_description": "ये नाम भरोसेमंद के रूप में सहेजे गए थे, पर Kiro Crew इन्हें स्वीकार नहीं करता, इसलिए ये ऐप अब भी ब्लॉक हैं। सूची साफ़ करने के लिए इन्हें हटा दें।"
         },
         "agent_identity_name_required": "पहचान चालू करने से पहले वर्कलोड नाम सेट करें।",
-        "agent_identity_code_not_kirocrew": "इस गेटवे की आईडी kirocrew- से शुरू नहीं होती। इंस्टेंस भूमिका इसे पढ़ सकती है, लेकिन कॉल केवल kirocrew-* गेटवे तक सीमित रहती है।",
+        "agent_identity_code_not_kirocrew": "इस गेटवे को कॉल नहीं किया जा सका। इस crew द्वारा उपयोग की जाने वाली भूमिका पर इस गेटवे के लिए bedrock-agentcore:InvokeGateway जोड़ें। kirocrew क्लाउड लॉन्च भूमिका केवल kirocrew-* गेटवे देती है।",
+        "agent_identity_code_invoke_denied": "गेटवे कॉल करते समय इस crew के AWS क्रेडेंशियल अस्वीकार कर दिए गए। इस crew द्वारा उपयोग की जाने वाली भूमिका पर इस गेटवे के लिए bedrock-agentcore:InvokeGateway जोड़ें।",
         "agent_identity_code_proxy_unavailable": "स्थानीय गेटवे प्रॉक्सी शुरू नहीं हो सकी। इस गेटवे पर AgentCore समर्थन इंस्टॉल करें, फिर फिर से सत्यापित करें।"
       },
       "shortcutsPanel": {

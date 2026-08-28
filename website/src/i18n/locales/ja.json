@@ -11917,7 +11917,7 @@
         "agent_identity_check_ready": "ゲートウェイは準備完了です",
         "agent_identity_check_authorizer": "受信認証がこの ID と一致します",
         "agent_identity_check_url_match": "保存した URL がこのゲートウェイと一致します",
-        "agent_identity_check_invoke_scope": "インスタンスロールはこのゲートウェイを呼び出せます",
+        "agent_identity_check_invoke_scope": "この crew はこのゲートウェイを呼び出せます",
         "agent_identity_check_tools": "ツールに到達できます",
         "agent_identity_check_identity": "この crew はワークロードトークンを発行できます",
         "agent_identity_checks": "接続チェック",
@@ -11937,12 +11937,12 @@
         "agent_identity_code_no_url": "ゲートウェイ URL を保存してから確認してください。",
         "agent_identity_code_extra_missing": "このゲートウェイに AgentCore サポートをインストールしてから、もう一度確認してください。",
         "agent_identity_code_unusable_url": "その URL は利用可能な AgentCore ゲートウェイアドレスではありません。",
-        "agent_identity_code_aws_denied": "このインスタンスロールはゲートウェイを読み取れません。検査用の許可を追加して再試行してください。",
+        "agent_identity_code_aws_denied": "この crew の AWS 認証情報ではゲートウェイを読み取れません。検査用の許可を追加して再試行してください。",
         "agent_identity_code_not_found": "AWS にこの URL のゲートウェイはありません。",
         "agent_identity_code_aws_error": "AWS に接続できません。ゲートウェイのログを確認してください。",
         "agent_identity_code_service_linked": "その名前はゲートウェイのサービス連携 ID です。crew にはスタンドアロンのワークロード ID が必要です。",
         "agent_identity_code_not_named": "この crew の AgentCore ID 名を設定してから、もう一度確認してください。",
-        "agent_identity_code_identity_denied": "AWS はこの ID 名のトークンを拒否しました。スタンドアロン名とインスタンスロールの許可を確認してください。",
+        "agent_identity_code_identity_denied": "AWS はこの ID 名のトークンを拒否しました。スタンドアロン名と、この crew の AWS 認証情報が GetWorkloadAccessToken を実行できることを確認してください。",
         "agent_identity_code_identity_not_found": "AWS にこの名前のワークロード ID はありません。",
         "agent_identity_code_identity_error": "ワークロードトークンを発行できませんでした。ゲートウェイのログを確認してください。",
         "agent_identity_copy_debug": "デバッグ概要をコピー",
@@ -12098,7 +12098,8 @@
           "ineffective_description": "これらの名前は信頼済みとして保存されましたが、Kiro Crew はそれらを受け付けないため、アプリは依然としてブロックされています。リストを整理するには削除してください。"
         },
         "agent_identity_name_required": "ID をオンにする前にワークロード名を設定してください。",
-        "agent_identity_code_not_kirocrew": "このゲートウェイの ID は kirocrew- で始まっていません。インスタンスロールは検査できますが、呼び出しは kirocrew-* ゲートウェイに限られます。",
+        "agent_identity_code_not_kirocrew": "このゲートウェイを呼び出せませんでした。この crew が使うロールに、このゲートウェイに対する bedrock-agentcore:InvokeGateway を付与してください。kirocrew のクラウド起動ロールは kirocrew-* ゲートウェイのみを許可します。",
+        "agent_identity_code_invoke_denied": "ゲートウェイの呼び出し時に、この crew の AWS 認証情報が拒否されました。この crew が使うロールに、このゲートウェイに対する bedrock-agentcore:InvokeGateway を付与してください。",
         "agent_identity_code_proxy_unavailable": "ローカルのゲートウェイプロキシを起動できませんでした。このゲートウェイに AgentCore サポートをインストールしてから、もう一度確認してください。"
       },
       "shortcutsPanel": {

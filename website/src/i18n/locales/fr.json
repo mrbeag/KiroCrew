@@ -12250,7 +12250,7 @@
         "agent_identity_check_ready": "La passerelle est prête",
         "agent_identity_check_authorizer": "L’authentification entrante correspond à cette identité",
         "agent_identity_check_url_match": "L’URL enregistrée correspond à cette passerelle",
-        "agent_identity_check_invoke_scope": "Le rôle d’instance peut invoquer cette passerelle",
+        "agent_identity_check_invoke_scope": "Cette crew peut appeler cette passerelle",
         "agent_identity_check_tools": "Les outils sont accessibles",
         "agent_identity_check_identity": "Cette crew peut émettre un jeton de charge de travail",
         "agent_identity_checks": "Contrôles de connexion",
@@ -12270,12 +12270,12 @@
         "agent_identity_code_no_url": "Enregistrez une URL de passerelle pour l’inspecter.",
         "agent_identity_code_extra_missing": "Installez la prise en charge AgentCore sur cette passerelle, puis vérifiez à nouveau.",
         "agent_identity_code_unusable_url": "Cette URL n’est pas une adresse de passerelle AgentCore utilisable.",
-        "agent_identity_code_aws_denied": "Ce rôle d’instance ne peut pas lire la passerelle. Attachez l’autorisation d’inspection, puis réessayez.",
+        "agent_identity_code_aws_denied": "Les identifiants AWS de cette crew ne peuvent pas lire la passerelle. Attachez l’autorisation d’inspection, puis réessayez.",
         "agent_identity_code_not_found": "AWS n’a pas de passerelle à cette URL.",
         "agent_identity_code_aws_error": "Impossible de joindre AWS. Consultez les journaux de la passerelle.",
         "agent_identity_code_service_linked": "Ce nom est l’identité liée au service de la passerelle. La crew a besoin d’une identité de charge de travail autonome.",
         "agent_identity_code_not_named": "Définissez le nom d’identité AgentCore de cette crew, puis vérifiez à nouveau.",
-        "agent_identity_code_identity_denied": "AWS a refusé un jeton pour ce nom d’identité. Confirmez le nom autonome et l’autorisation du rôle d’instance.",
+        "agent_identity_code_identity_denied": "AWS a refusé un jeton pour ce nom d’identité. Confirmez le nom autonome et que les identifiants AWS de cette crew peuvent utiliser GetWorkloadAccessToken.",
         "agent_identity_code_identity_not_found": "AWS n’a aucune identité de charge de travail portant ce nom.",
         "agent_identity_code_identity_error": "Impossible d’émettre un jeton de charge de travail. Consultez les journaux de la passerelle.",
         "agent_identity_copy_debug": "Copier le résumé de débogage",
@@ -12431,7 +12431,8 @@
           "ineffective_description": "Ces noms ont été enregistrés comme de confiance, mais Kiro Crew ne les accepte pas, donc les applications restent bloquées. Retire-les pour nettoyer la liste."
         },
         "agent_identity_name_required": "Définissez un nom de charge de travail avant d’activer l’identité.",
-        "agent_identity_code_not_kirocrew": "L’identifiant de cette passerelle ne commence pas par kirocrew-. Le rôle d’instance peut l’inspecter, mais l’invocation reste limitée aux passerelles kirocrew-*.",
+        "agent_identity_code_not_kirocrew": "Impossible d’invoquer cette passerelle. Attachez bedrock-agentcore:InvokeGateway sur cette passerelle au rôle utilisé par cette crew. Un rôle de lancement cloud kirocrew n’accorde que les passerelles kirocrew-*.",
+        "agent_identity_code_invoke_denied": "Les identifiants AWS de cette crew ont été refusés lors de l’appel à la passerelle. Attachez bedrock-agentcore:InvokeGateway sur cette passerelle au rôle utilisé par cette crew.",
         "agent_identity_code_proxy_unavailable": "Le proxy local de la passerelle n’a pas pu démarrer. Installez la prise en charge AgentCore sur cette passerelle, puis vérifiez à nouveau."
       },
       "shortcutsPanel": {

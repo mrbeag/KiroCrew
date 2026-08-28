@@ -2022,6 +2022,7 @@ const CATALOG_CODE_HINT: Record<string, string> = {
   identity_not_found: 'pages.settings.securityPanel.agent_identity_code_identity_not_found',
   identity_error: 'pages.settings.securityPanel.agent_identity_code_identity_error',
   not_kirocrew_prefixed: 'pages.settings.securityPanel.agent_identity_code_not_kirocrew',
+  invoke_denied: 'pages.settings.securityPanel.agent_identity_code_invoke_denied',
   proxy_unavailable: 'pages.settings.securityPanel.agent_identity_code_proxy_unavailable',
 }
 
@@ -2056,8 +2057,8 @@ function catalogHint(data: AgentcoreGatewayData | undefined): string | null {
     return i18nT('pages.settings.securityPanel.agent_identity_mismatch_authorizer')
   }
   const invoke = data.checks.find(c => c.id === 'invoke_scope')
-  if (invoke && !invoke.ok && invoke.detail === 'not_kirocrew_prefixed') {
-    return i18nT('pages.settings.securityPanel.agent_identity_code_not_kirocrew')
+  if (invoke && !invoke.ok && CATALOG_CODE_HINT[invoke.detail]) {
+    return i18nT(CATALOG_CODE_HINT[invoke.detail])
   }
   if (data.tools.skip_reason === 'login_needs_sign_in') {
     return i18nT('pages.settings.securityPanel.agent_identity_tools_skipped_login')

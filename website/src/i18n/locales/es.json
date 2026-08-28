@@ -12250,7 +12250,7 @@
         "agent_identity_check_ready": "La puerta de enlace está lista",
         "agent_identity_check_authorizer": "La autenticación de entrada coincide con esta identidad",
         "agent_identity_check_url_match": "La URL guardada coincide con esta puerta de enlace",
-        "agent_identity_check_invoke_scope": "El rol de la instancia puede invocar esta puerta de enlace",
+        "agent_identity_check_invoke_scope": "Esta crew puede llamar a esta puerta de enlace",
         "agent_identity_check_tools": "Las herramientas son accesibles",
         "agent_identity_check_identity": "Esta crew puede emitir un token de carga de trabajo",
         "agent_identity_checks": "Comprobaciones de conexión",
@@ -12270,12 +12270,12 @@
         "agent_identity_code_no_url": "Guarda una URL de puerta de enlace para inspeccionarla.",
         "agent_identity_code_extra_missing": "Instala la compatibilidad con AgentCore en esta puerta de enlace y vuelve a comprobar.",
         "agent_identity_code_unusable_url": "Esa URL no es una dirección de puerta de enlace AgentCore usable.",
-        "agent_identity_code_aws_denied": "Este rol de instancia no puede leer la puerta de enlace. Adjunta el permiso de inspección y reintenta.",
+        "agent_identity_code_aws_denied": "Las credenciales de AWS de esta crew no pueden leer la puerta de enlace. Adjunta el permiso de inspección y reintenta.",
         "agent_identity_code_not_found": "AWS no tiene una puerta de enlace en esta URL.",
         "agent_identity_code_aws_error": "No se pudo contactar con AWS. Revisa los registros.",
         "agent_identity_code_service_linked": "Ese nombre es la identidad vinculada al servicio del gateway. La crew necesita una identidad de carga de trabajo independiente.",
         "agent_identity_code_not_named": "Define el nombre de identidad AgentCore de esta crew y vuelve a verificar.",
-        "agent_identity_code_identity_denied": "AWS rechazó un token para este nombre de identidad. Confirma el nombre independiente y el permiso del rol de instancia.",
+        "agent_identity_code_identity_denied": "AWS rechazó un token para este nombre de identidad. Confirma el nombre independiente y que las credenciales de AWS de esta crew puedan usar GetWorkloadAccessToken.",
         "agent_identity_code_identity_not_found": "AWS no tiene una identidad de carga de trabajo con este nombre.",
         "agent_identity_code_identity_error": "No se pudo emitir un token de carga de trabajo. Revisa los registros del gateway.",
         "agent_identity_copy_debug": "Copiar resumen de depuración",
@@ -12431,7 +12431,8 @@
           "ineffective_description": "Estos nombres se guardaron como de confianza, pero Kiro Crew no los acepta, así que las aplicaciones siguen bloqueadas. Quítalos para limpiar la lista."
         },
         "agent_identity_name_required": "Define un nombre de carga de trabajo antes de activar la identidad.",
-        "agent_identity_code_not_kirocrew": "El id de este gateway no empieza por kirocrew-. El rol de instancia puede inspeccionarlo, pero la invocación sigue limitada a gateways kirocrew-*.",
+        "agent_identity_code_not_kirocrew": "No se pudo invocar esta puerta de enlace. Adjunta bedrock-agentcore:InvokeGateway en esta puerta de enlace al rol que usa esta crew. Un rol de lanzamiento kirocrew en la nube solo concede puertas de enlace kirocrew-*.",
+        "agent_identity_code_invoke_denied": "Las credenciales de AWS de esta crew fueron rechazadas al llamar a la puerta de enlace. Adjunta bedrock-agentcore:InvokeGateway en esta puerta de enlace al rol que usa esta crew.",
         "agent_identity_code_proxy_unavailable": "No se pudo iniciar el proxy local del gateway. Instala el soporte de AgentCore en este gateway y vuelve a verificar."
       },
       "shortcutsPanel": {
