@@ -2118,6 +2118,44 @@ describe('SecurityPanel — agent identity', () => {
     await waitFor(() => expect(api.verifyAgentcoreGateway).toHaveBeenCalled())
   })
 
+  it('shows a failed target status reason from the Gateway', async () => {
+    ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      extra_installed: true,
+      extra_code: 'ok',
+    })
+    ;(api.getAgentcoreGateway as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...CATALOG_IDLE,
+      code: 'ok',
+      posture: 'workload',
+      gateway_url: 'https://demo-gw.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp',
+      targets: [
+        {
+          target_id: 'fail1',
+          name: 'public-docs',
+          target_type: 'MCP_SERVER',
+          status: 'FAILED',
+          listing_mode: 'DEFAULT',
+          last_synchronized_at: '',
+          pending_auth: false,
+          authorization_url: null,
+          syncable: true,
+          status_reasons: ['The MCP server endpoint hostname could not be resolved.'],
+        },
+      ],
+    })
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+    expect(await screen.findByText('public-docs')).toBeInTheDocument()
+    expect(screen.getByText('FAILED')).toBeInTheDocument()
+    expect(
+      screen.getByText('The MCP server endpoint hostname could not be resolved.'),
+    ).toBeInTheDocument()
+  })
+
   it('explains when the workload identity name cannot vend a token', async () => {
     ;(api.getAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...IDENTITY_UNSET,

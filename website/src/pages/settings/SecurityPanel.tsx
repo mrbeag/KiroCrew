@@ -2129,6 +2129,11 @@ function TargetRow({
             {i18nT('pages.settings.securityPanel.agent_identity_pending_auth')}
           </div>
         ) : null}
+        {(target.status_reasons ?? []).map(reason => (
+          <div key={reason} className="text-warn mt-1 leading-relaxed">
+            {reason}
+          </div>
+        ))}
       </td>
       <td className="py-2 pr-3 text-[12px] text-muted">{mode || '—'}</td>
       <td className="py-2 pr-3 text-[12px] text-muted">{synced}</td>

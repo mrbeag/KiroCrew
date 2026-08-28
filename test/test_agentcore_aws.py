@@ -494,6 +494,17 @@ def test_probe_workload_identity_skips_login(monkeypatch) -> None:
     }
 
 
+def _runtime_ctx(*, agent_identity: object | None = None):
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class _Ctx:
+        governance: object | None = None
+        agent_identity: object | None = None
+
+    return _Ctx(agent_identity=agent_identity)
+
+
 def test_apply_agentcore_runtime_swaps_ceiling_and_adapter(monkeypatch) -> None:
     from kiro_crew.platform import agentcore_aws as aws_mod
     from kiro_crew.platform import context as ctx_mod
@@ -502,7 +513,7 @@ def test_apply_agentcore_runtime_swaps_ceiling_and_adapter(monkeypatch) -> None:
     ceiling = object()
     adapter = object()
     captured: dict[str, object] = {}
-    ctx = type("C", (), {"governance": None, "agent_identity": object()})()
+    ctx = _runtime_ctx(agent_identity=object())
 
     monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
     monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)
@@ -524,7 +535,7 @@ def test_apply_agentcore_runtime_off_uses_default_adapter(monkeypatch) -> None:
 
     ceiling = object()
     captured: dict[str, object] = {}
-    ctx = type("C", (), {"governance": None, "agent_identity": object()})()
+    ctx = _runtime_ctx(agent_identity=object())
 
     monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
     monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)
@@ -545,7 +556,7 @@ def test_apply_agentcore_runtime_missing_extra_keeps_ceiling(monkeypatch) -> Non
     ceiling = object()
     previous = object()
     captured: dict[str, object] = {}
-    ctx = type("C", (), {"governance": None, "agent_identity": previous})()
+    ctx = _runtime_ctx(agent_identity=previous)
 
     monkeypatch.setattr(gov_mod, "load_security_policy", lambda: ceiling)
     monkeypatch.setattr(ctx_mod, "current_context", lambda: ctx)

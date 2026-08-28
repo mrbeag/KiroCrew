@@ -855,7 +855,7 @@ same principal rules, same redaction. Do not start this phase to
 Operator account `199621702461` / `us-east-1`, local IAM
 `trackout-email`. Tagged stack `kirocrew:e2e=true`: AWS_IAM Gateway
 `kirocrew-e2e-n9pk1rdrea` (READY), standalone identity `kirocrew-e2e`,
-Lambda target `echo-hello`.
+Lambda target `echo-hello`, MCP_SERVER target `public-docs`.
 
 Verified live:
 
@@ -904,6 +904,18 @@ Closed on the production-ready pass:
 - Invoke-scope stays `kirocrew-*` (successor boundary). A pasted
   non-prefixed Gateway is inspect-ok and invoke-not, with a
   catalog hint (`not_kirocrew_prefixed`).
+- Instance-role-only IAM (`kirocrew-e2e-instance` assumed from
+  `trackout-email`, policy from `agentcore_instance_policy_document(
+  "workload")`): WAT `ok`, all nine catalog checks green, tools/list
+  and `SynchronizeGatewayTargets` accepted. Admin keys were not in
+  that process.
+- MCP_SERVER target `public-docs` / `2L1SFWDBDE` (DEFAULT listing)
+  is READY. GetGatewayTarget still omits `targetType`; catalog
+  infers `MCP_SERVER`, marks it `syncable`, and lists
+  `public-docs___ask_question` / `read_wiki_contents` /
+  `read_wiki_structure` next to the Lambda tool. A hostname that
+  does not resolve fails as `FAILED` with `statusReasons`; Settings
+  now shows those reasons on the target row.
 
 Still open (not v1 blockers):
 
@@ -916,10 +928,9 @@ Still open (not v1 blockers):
   refuses caller WAT. Crew must use a standalone workload identity.
   Settings now names that failure `service_linked`.
 - Phase 5 `GetResourceOauth2Token` stays follow-on.
-- Lambda targets stay `not_syncable`. An MCP_SERVER target on the
-  tagged stack is a live follow-on of this pass.
-- Instance-role-only catalog/WAT/SigV4 (not admin) is a live
-  follow-on of this pass.
+- Lambda targets stay `not_syncable`.
+- Desktop/PEP 668 extra install and widening Invoke to `gateway/*`
+  stay out of v1.
 
 ## Alternatives considered
 

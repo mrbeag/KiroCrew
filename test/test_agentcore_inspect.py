@@ -246,6 +246,37 @@ def test_live_lambda_target_shape_is_lambda_not_mcp(
     assert target["syncable"] is False
 
 
+def test_live_mcp_server_target_shape_is_syncable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control plane omits targetType; type is mcp.mcpServer (live us-east-1)."""
+    client = _Client(
+        targets=[{"targetId": "2L1SFWDBDE", "name": "public-docs", "status": "READY"}],
+        details={
+            "2L1SFWDBDE": {
+                "targetId": "2L1SFWDBDE",
+                "name": "public-docs",
+                "status": "READY",
+                "statusReasons": [],
+                "targetConfiguration": {
+                    "mcp": {
+                        "mcpServer": {
+                            "endpoint": "https://mcp.example.test/mcp",
+                            "listingMode": "DEFAULT",
+                        }
+                    }
+                },
+            }
+        },
+    )
+    _isolate(monkeypatch, client=client)
+    snap = inspect.inspect_snapshot()
+    target = snap["targets"][0]
+    assert target["target_type"] == "MCP_SERVER"
+    assert target["listing_mode"] == "DEFAULT"
+    assert target["syncable"] is True
+
+
 def test_synchronize_lambda_is_not_syncable(monkeypatch: pytest.MonkeyPatch) -> None:
     class Unsupported(Exception):
         response = {"Error": {"Code": "ValidationException"}}
