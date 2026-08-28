@@ -1309,6 +1309,56 @@ jobs:
           npm run lint:phantom-classes -- --test
           npm run lint:phantom-classes
 
+  # Prove `npm ci` still resolves on the OLDEST Node the frontend claims to
+  # support. Every other job here runs Node 24, and npm 11 (Node 24) and npm 10
+  # (Node 22) build different ideal trees for an OPTIONAL PEER dependency: npm 10
+  # wants a nested entry for it, npm 11 does not install it at all. So a lockfile
+  # regenerated under npm 11 silently drops that entry, and `npm ci` then dies
+  # with EUSAGE ("Missing: <pkg> from lock file") for everyone on the declared
+  # floor while all of CI stays green. That has already happened twice to the
+  # same dependency, the second time as a side effect of a change about something
+  # else entirely -- which is why this is a gate and not a note.
+  lockfile-engines-floor:
+    name: Lockfile Installs On Declared Node Floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pinned to the floor, NOT to `engines.node` via node-version-file: that
+      # input resolves a range like ">=22" to the NEWEST matching release, which
+      # would quietly re-test Node 24 and make this job vacuous. The step below
+      # keeps the literal honest instead.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: The pinned version is the declared floor
+        working-directory: website
+        # Fails loudly when engines.node is raised without moving the pin above.
+        # A red that names the drift is worth far more than a gate that keeps
+        # passing against a floor the project no longer supports.
+        run: |
+          floor=$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g, '').split('.')[0]")
+          running=$(node -p "process.versions.node.split('.')[0]")
+          if [ "$floor" != "$running" ]; then
+            echo "engines.node declares floor $floor, but this job runs Node $running." >&2
+            echo "Update node-version in the lockfile-engines-floor job to $floor." >&2
+            exit 1
+          fi
+          echo "Node $running matches the declared engines.node floor."
+
+      - name: npm ci on the engines floor
+        working-directory: website
+        # A real install, not `--dry-run`: dry-run still fires the postinstall
+        # patch script but leaves no node_modules for it to patch, so it fails
+        # for a reason that has nothing to do with the lockfile. Installing for
+        # real also makes the gate mean what its name says -- `npm ci` works on
+        # the declared floor -- rather than only that resolution succeeded.
+        run: npm ci --no-audit --no-fund
+
   cfn-lint:
     name: CloudFormation Lint
     runs-on: ubuntu-latest
