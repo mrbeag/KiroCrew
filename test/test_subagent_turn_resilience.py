@@ -283,8 +283,57 @@ async def test_throttle_fallback_chain_exhausted_propagates():
 
     assert info.done is True
     assert "500" in info.error
+    # #5447 item 1: the terminal error text names the WHOLE walk, not just the
+    # last candidate's failure — the chain story is appended to info.error.
+    assert "primary-model throttled" in info.error
+    assert "fb-1" in info.error and "also unavailable" in info.error
     assert len(calls) == 1 + TRANSIENT_RETRIES + FALLBACK_CANDIDATE_ATTEMPTS
     provider.set_model.assert_awaited_once_with("fb-1")
+
+
+@pytest.mark.asyncio
+async def test_throttle_fallback_ladder_routes_through_shared_budget_body():
+    """DRIFT PIN (#5447 item 2): the ladder must consult
+    FallbackState.should_retry_active for the per-candidate budget. Forcing
+    the shared body to refuse retries changes the attempt count — proof the
+    budget is not re-encoded locally (mirror of the stream_and_collect pin in
+    test_llm_helpers.py)."""
+    from kiro_crew.llm_helpers import FallbackState
+
+    calls: list[str] = []
+
+    def stream_factory(msg: str, *a, **kw):
+        calls.append(msg)
+
+        async def _gen():
+            raise _TransientError("backend throttle 500")
+            yield  # noqa: unreachable — async generator marker
+
+        return _gen()
+
+    sessions = _mock_sessions(stream_factory)
+    provider = sessions._provider
+    provider.available_models = MagicMock(return_value=[{"modelId": "fb-1"}])
+    provider.served_model = "primary-model"
+    provider._model = "primary-model"
+
+    async def _move(model_id):
+        provider._model = model_id
+        provider.served_model = model_id
+
+    provider.set_model = AsyncMock(side_effect=_move)
+
+    mgr = _manager(sessions)
+    with (
+        patch("kiro_crew.subagent.transient_retry_delay", return_value=0.0),
+        patch("kiro_crew.subagent.configured_fallback_chain", return_value=("fb-1",)),
+        patch.object(FallbackState, "should_retry_active", return_value=False),
+    ):
+        info = await _spawn_and_wait(mgr)
+
+    assert info.done is True
+    # Budget refused ⇒ the candidate gets only its single post-advance attempt.
+    assert len(calls) == 1 + TRANSIENT_RETRIES + 1
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,1393 @@
+diff --git a/.github/black-baseline.txt b/.github/black-baseline.txt
+index 5765c47d5..77e1e5019 100644
+--- a/.github/black-baseline.txt
++++ b/.github/black-baseline.txt
+@@ -287,7 +287,6 @@ src/kiro_crew/eval/scenario.py
+ src/kiro_crew/frontend.py
+ src/kiro_crew/gateway_shutdown_budget.py
+ src/kiro_crew/github_runner.py
+-src/kiro_crew/heartbeat.py
+ src/kiro_crew/history.py
+ src/kiro_crew/hooks.py
+ src/kiro_crew/image_artifacts.py
+@@ -774,7 +773,6 @@ test/test_handlers_files_upload.py
+ test/test_handlers_mcp_coverage.py
+ test/test_handlers_memory_coverage.py
+ test/test_heartbeat_atomic_merge.py
+-test/test_heartbeat_cycle_recycle.py
+ test/test_heartbeat_prompt_deliver.py
+ test/test_heartbeat_retention.py
+ test/test_heartbeat_sel_prune_offload.py
+diff --git a/src/kiro_crew/dashboard/chat_runner.py b/src/kiro_crew/dashboard/chat_runner.py
+index fafe41342..45ae15d0e 100644
+--- a/src/kiro_crew/dashboard/chat_runner.py
++++ b/src/kiro_crew/dashboard/chat_runner.py
+@@ -179,10 +179,9 @@ from kiro_crew.llm_helpers import (
+     acp_error_is_transient,
+     advance_fallback_candidate,
+     configured_fallback_chain,
+-    provider_active_model,
+-    provider_raw_model,
++    fallback_rewound_transient_budget,
++    probe_fallback_restore,
+     record_interaction_event,
+-    resolve_substitute_set_model,
+     run_bg_oneliner,
+     transient_retry_delay,
+ )
+@@ -965,69 +964,47 @@ async def _probe_fallback_restore_for_slot(slot: Any, client: Any) -> None:
+ 
+ 
+ async def _probe_fallback_restore_for_slot_locked(slot: Any, client: Any) -> None:
+-    """Body of the restore probe; caller holds ``slot._model_pick_lock``."""
++    """Body of the restore probe; caller holds ``slot._model_pick_lock``.
++
++    Thin slot-state adapter over the SHARED probe body
++    (:func:`llm_helpers.probe_fallback_restore` — the same
++    probe/witness/clear sequencing the unattended surfaces use, so the two
++    cannot diverge). Only the slot-specific pieces live here:
++
++    - ``state``: the sticky fallback record is slot-held, not the provider
++      marker.
++    - ``stale``: an explicit user pick made AFTER the swap bumps the pick
++      generation — including a pick of the fallback model itself, which
++      neither the served model nor slot.model can distinguish from our own
++      swap (the automatic provider backfill also writes the served fallback
++      into an unpinned slot's model, so comparing slot.model VALUES would
++      misread the backfill as a pick and permanently abandon restoration). An
++      explicit pick must never be overridden by a restore.
++    - ``clear``: slot fields and the provider marker drop as one logical
++      record (:func:`_clear_fallback_sticky_state`).
++    - ``on_restored``: heal slot.model if the automatic backfill wrote the
++      fallback into an unpinned slot while the fallback was active —
++      slot.model is re-sent as a set_model override on resume, so leaving the
++      fallback id there would re-pin the fallback after the primary
++      recovered. No explicit pick happened (``stale`` checked first), so the
++      snapshot is the honest value.
++    """
+     candidate = slot._active_fallback_model
+     if not candidate:
+         return
+-    primary = slot._fallback_primary_model
+-    current = provider_active_model(client)
+-    _moved_off = current and current.strip().lower() != candidate.strip().lower()
+-    # An explicit user pick made AFTER the swap bumps the pick generation —
+-    # including a pick of the fallback model itself, which neither the served
+-    # model nor slot.model can distinguish from our own swap (the automatic
+-    # provider backfill also writes the served fallback into an unpinned
+-    # slot's model, so comparing slot.model VALUES would misread the backfill
+-    # as a pick and permanently abandon restoration). An explicit pick must
+-    # never be overridden by a restore.
+-    _user_repicked = slot._model_pick_gen != slot._fallback_pick_gen
+-    if _moved_off or _user_repicked or not primary:
+-        # Session moved off our fallback by other means (explicit pick, reset)
+-        # or the primary was never known — the sticky state is stale.
+-        _clear_fallback_sticky_state(slot, client)
+-        return
+-    set_model_fn = resolve_substitute_set_model(client)
+-    if set_model_fn is None:
+-        return
+-    try:
+-        await set_model_fn(primary)
+-    except Exception as exc:
+-        logger.info(
+-            "model fallback: primary %s still unavailable on slot %s (%s); staying on %s",
+-            primary,
+-            slot.key,
+-            exc,
+-            candidate,
+-        )
+-        return
+-    # Witness the restore before heal+clear (same check as
+-    # llm_helpers.probe_fallback_restore): a non-raising set_model(primary)
+-    # can be a silent no-op when resolve collapses the target to "". Clearing
+-    # sticky state while still ON the fallback re-opens the backfill
+-    # permanent-pin door this state exists to close. Keep everything and
+-    # retry at the next genuine turn start.
+-    _raw = provider_raw_model(client)
+-    if _raw and candidate and _raw.strip().lower() == str(candidate).strip().lower():
+-        logger.info(
+-            "model fallback: restore to %s was a silent no-op on slot %s (still on %s); "
+-            "keeping fallback",
+-            primary,
+-            slot.key,
+-            candidate,
+-        )
+-        return
+-    # Heal slot.model if the automatic backfill wrote the fallback into an
+-    # unpinned slot while the fallback was active: slot.model is re-sent as a
+-    # set_model override on resume, so leaving the fallback id there would
+-    # re-pin the fallback after the primary recovered. No explicit pick
+-    # happened (checked above), so the snapshot is the honest value.
+-    if (slot.model or "") != slot._fallback_slot_model:
+-        slot.model = slot._fallback_slot_model
+-    _clear_fallback_sticky_state(slot, client)
+-    logger.warning(
+-        "model fallback: restored %s -> %s (reason=primary-recovered, surface=dashboard, slot=%s)",
+-        candidate,
+-        primary,
+-        slot.key,
++
++    def _heal_backfilled_slot_model() -> None:
++        if (slot.model or "") != slot._fallback_slot_model:
++            slot.model = slot._fallback_slot_model
++
++    await probe_fallback_restore(
++        client,
++        surface="dashboard",
++        state=(slot._fallback_primary_model, candidate),
++        stale=slot._model_pick_gen != slot._fallback_pick_gen,
++        clear=lambda: _clear_fallback_sticky_state(slot, client),
++        on_restored=_heal_backfilled_slot_model,
++        log_suffix=f", slot={slot.key}",
+     )
+ 
+ 
+@@ -9296,13 +9273,15 @@ async def _run_chat(
+             # be said out loud), then re-queue the SAME message on the SAME
+             # live session, exactly like the same-model retry above.
+             #
+-            # Attempt budget: rewinding the counter to TRANSIENT_RETRIES - 1
+-            # grants the candidate exactly ONE more pass through the
+-            # same-model branch above, so each candidate gets two attempts
+-            # (this re-queued one + one retry) before the next exhaustion
+-            # lands back here and advances the chain — see
+-            # llm_helpers.FALLBACK_CANDIDATE_ATTEMPTS for why not a full
+-            # fresh budget. Nested turns (_prompt_depth > 0) get no fallback
++            # Attempt budget: rewinding the counter grants the candidate
++            # exactly one more pass through the same-model branch above, so
++            # each candidate gets FALLBACK_CANDIDATE_ATTEMPTS attempts (this
++            # re-queued one + the rewound passes) before the next exhaustion
++            # lands back here and advances the chain. The rewind value is
++            # derived in ONE place with the unattended surfaces' budget — see
++            # llm_helpers.fallback_rewound_transient_budget /
++            # FallbackState.should_retry_active. Nested turns
++            # (_prompt_depth > 0) get no fallback
+             # in v1 and Stop-suppressed cycles never swap (both guarded in
+             # the condition before the side-effecting swap runs).
+             slot.purge_chunks()
+@@ -9327,7 +9306,7 @@ async def _run_chat(
+                 _fb_candidate,
+                 slot._fallback_candidate_idx,
+             )
+-            slot._transient_5xx_retries = TRANSIENT_RETRIES - 1
++            slot._transient_5xx_retries = fallback_rewound_transient_budget()
+             await asyncio.sleep(transient_retry_delay(1))
+             # Stop guard AFTER the sleep (review finding on 1a61ddcf): a Stop
+             # pressed during this backoff resolves while no prompt is active,
+diff --git a/src/kiro_crew/heartbeat.py b/src/kiro_crew/heartbeat.py
+index 2cebe2871..3dd3792b8 100644
+--- a/src/kiro_crew/heartbeat.py
++++ b/src/kiro_crew/heartbeat.py
+@@ -20,6 +20,7 @@ from kiro_crew import platform_compat, shutdown_event
+ from kiro_crew.atomic_write import atomic_write
+ from kiro_crew.config.loader import KiroCrewConfig
+ from kiro_crew.executors import maintenance_executor
++from kiro_crew.llm_helpers import append_fallback_story
+ from kiro_crew.memory import MemoryStore, workspace_dir
+ from kiro_crew.metrics.provider import get_recorder
+ from kiro_crew.sel import sel
+@@ -171,9 +172,7 @@ class HeartbeatService:
+ 
+         if self._tick % _FTS_REBUILD_TICKS == 0:
+             loop = asyncio.get_running_loop()
+-            count = await loop.run_in_executor(
+-                maintenance_executor(), self._memory.rebuild_index
+-            )
++            count = await loop.run_in_executor(maintenance_executor(), self._memory.rebuild_index)
+             logger.info("FTS index rebuilt: %d files", count)
+ 
+         if self._tick % _PRUNE_TICKS == 0:
+@@ -244,8 +243,15 @@ class HeartbeatService:
+                 )
+                 for (task_text, deliver), result in zip(tasks, results):
+                     if isinstance(result, BaseException):
++                        # A chain-exhaustion failure carries the fallback story
++                        # on the exception; this log line is the heartbeat's
++                        # terminal error text, so append it here — the walk
++                        # must not be reported as just the last candidate's
++                        # failure (llm_helpers.FALLBACK_STORY_ATTR).
+                         logger.warning(
+-                            "Heartbeat task failed: %s", task_text[:80], exc_info=result,
++                            "Heartbeat task failed: %s",
++                            append_fallback_story(task_text[:80], result),
++                            exc_info=result,
+                         )
+                         keep.append((task_text, deliver))
+                     elif _should_keep(result):
+@@ -258,7 +264,10 @@ class HeartbeatService:
+                 # between this final read and os.replace. The entire durable
+                 # transaction runs off the gateway event-loop thread.
+                 appended_count = await asyncio.to_thread(
+-                    _rewrite_heartbeat_locked, path, tasks, keep,
++                    _rewrite_heartbeat_locked,
++                    path,
++                    tasks,
++                    keep,
+                 )
+                 if appended_count:
+                     logger.info(
+diff --git a/src/kiro_crew/llm_helpers.py b/src/kiro_crew/llm_helpers.py
+index 215d2ba14..b277220f1 100644
+--- a/src/kiro_crew/llm_helpers.py
++++ b/src/kiro_crew/llm_helpers.py
+@@ -30,7 +30,13 @@ from kiro_crew.providers.base import (
+     LLMEvent,
+     LLMProvider,
+ )
+-from kiro_crew.security import is_denied, is_sensitive_bash_command, is_sensitive_path
++from kiro_crew.security import (
++    is_denied,
++    is_sensitive_bash_command,
++    is_sensitive_path,
++    redact_credentials,
++    redact_exfiltration_urls,
++)
+ from kiro_crew.sel import sel as _sel
+ 
+ _PROMPT_BUSY_RETRIES = 2
+@@ -217,6 +223,22 @@ def first_advertised_fallback(advertised: Any, rejected: str | None) -> str | No
+ # across a 4-candidate chain).
+ FALLBACK_CANDIDATE_ATTEMPTS = 2
+ 
++
++def fallback_rewound_transient_budget() -> int:
++    """Same-model counter value that grants a fresh fallback candidate its budget.
++
++    The dashboard's interactive ladder does not hold a :class:`FallbackState`
++    between turns — after a swap it rewinds ``slot._transient_5xx_retries`` so
++    the candidate gets exactly :data:`FALLBACK_CANDIDATE_ATTEMPTS` - 1 further
++    passes through the same-model retry branch (the re-queued turn itself is
++    the first attempt) before the next exhaustion advances the chain. Deriving
++    the rewind here keeps the per-candidate budget in ONE place with
++    :meth:`FallbackState.should_retry_active`, the encoding the unattended
++    surfaces use.
++    """
++    return TRANSIENT_RETRIES - (FALLBACK_CANDIDATE_ATTEMPTS - 1)
++
++
+ # Provider attribute carrying the active fallback as ``(primary, candidate)``.
+ # Doubles as (a) the sticky-restore marker — the next stream_and_collect call
+ # on the same provider probes one ``set_model(primary)`` restore — and (b) the
+@@ -226,6 +248,68 @@ FALLBACK_CANDIDATE_ATTEMPTS = 2
+ # remainder of the session by design.
+ TURN_FALLBACK_ATTR = "_kc_active_fallback"
+ 
++# Exception attribute carrying the chain-exhaustion story (set by the fallback
++# walks when every candidate also failed). The delivering surface appends it to
++# the terminal error text via :func:`append_fallback_story` so an unattended
++# failure names the whole walk, not just the last candidate's error.
++FALLBACK_STORY_ATTR = "_kc_fallback_story"
++
++
++def fallback_story_of(exc: BaseException) -> str:
++    """The chain-exhaustion story carried on *exc*, or ``""``.
++
++    Reads :data:`FALLBACK_STORY_ATTR`; anything but a non-empty string is
++    treated as absent (the attribute is best-effort — a frozen exception type
++    may have refused the set).
++    """
++    story = getattr(exc, FALLBACK_STORY_ATTR, None)
++    return story if isinstance(story, str) else ""
++
++
++def append_fallback_story(text: str, exc: BaseException) -> str:
++    """Append *exc*'s chain-exhaustion story to terminal error *text*.
++
++    THE consumer for :data:`FALLBACK_STORY_ATTR` on unattended surfaces
++    (cron failure alerts, sub-agent ``info.error``, the heartbeat failure
++    log). The interactive dashboard does not use it — it rebuilds a richer
++    story from ``slot._fallback_walked``. No story ⇒ *text* is returned
++    unchanged, byte-for-byte.
++    """
++    story = fallback_story_of(exc)
++    if not story:
++        return text
++    return f"{text} [{story}]" if text else story
++
++
++def annotate_model_fallback(text: str, provider: Any) -> str:
++    """Prepend the throttle-fallback warning to a delivered unattended result.
++
++    Unattended surfaces (cron/heartbeat results, the sub-agent completion
++    event) have no chat card to announce a fallback swap on, so the delivered
++    result text itself carries the warning — the same visibility contract as
++    the interactive notice card. The marker is read from
++    :data:`TURN_FALLBACK_ATTR` (set by the shared fallback walk) and left in
++    place: the swap is sticky for the session, so every run served by the
++    fallback repeats the warning until the restore probe moves the session
++    back. Model ids come from config, which is LLM-reachable via MCP — redact
++    before they reach Slack/dashboard. One body for every surface (was two
++    spellings: ``slack/gateway`` + an inline block in ``subagent``).
++    """
++    fb = getattr(provider, TURN_FALLBACK_ATTR, None)
++    if not fb:
++        return text
++    try:
++        primary, candidate = fb
++    except Exception:
++        return text
++    safe_primary = redact_credentials(redact_exfiltration_urls(str(primary))[0])[0]
++    safe_candidate = redact_credentials(redact_exfiltration_urls(str(candidate))[0])[0]
++    line = (
++        f"⚠️ Model '{safe_primary}' throttled; this run was served by fallback "
++        f"'{safe_candidate}'."
++    )
++    return f"{line}\n\n{text}" if text else line
++
+ 
+ def provider_fallback_active(provider: Any) -> bool:
+     """True while *provider* carries an active fallback marker.
+@@ -303,6 +387,37 @@ class FallbackState:
+         self.pos += remaining.index(cand) + 1
+         return cand
+ 
++    def should_retry_active(self) -> bool:
++        """Consume one more attempt on the active candidate, if budget remains.
++
++        THE single home of the per-candidate retry budget/trigger (was three
++        spellings: ``stream_and_collect`` Case 2.75, the sub-agent ladder, and
++        the dashboard's counter rewind — the last derives its counter from the
++        same constant via :func:`fallback_rewound_transient_budget`). ``True``
++        means the caller retries the active candidate once more (the attempt is
++        already recorded); ``False`` means no candidate is active or its
++        :data:`FALLBACK_CANDIDATE_ATTEMPTS` budget is spent — advance the chain
++        via :func:`advance_fallback_candidate`.
++        """
++        if self.active is None or self.attempts >= FALLBACK_CANDIDATE_ATTEMPTS:
++            return False
++        self.attempts += 1
++        return True
++
++    def exhaustion_story(self) -> str | None:
++        """One-line story of a spent chain walk, or ``None`` when none ran.
++
++        ``None`` (nothing was actually walked — e.g. every candidate was
++        skipped as unadvertised) means the error should surface exactly as it
++        did before the fallback feature existed, with no story attached.
++        """
++        if not self.walked:
++            return None
++        return (
++            f"{self.primary or 'the selected model'} throttled; "
++            f"fallbacks {', '.join(self.walked)} also unavailable"
++        )
++
+ 
+ async def advance_fallback_candidate(
+     provider: Any,
+@@ -471,37 +586,68 @@ def provider_raw_model(provider: Any) -> str:
+     return ""
+ 
+ 
+-async def probe_fallback_restore(provider: Any, *, surface: str = "unattended") -> None:
++async def probe_fallback_restore(
++    provider: Any,
++    *,
++    surface: str = "unattended",
++    state: tuple[Any, Any] | None = None,
++    stale: bool = False,
++    clear: Callable[[], None] | None = None,
++    on_restored: Callable[[], None] | None = None,
++    log_suffix: str = "",
++) -> None:
+     """One ``set_model(primary)`` restore probe at the start of a turn.
+ 
+-    No-op unless :data:`TURN_FALLBACK_ATTR` marks an active fallback. The
+-    restore only fires while the session is still on the fallback this feature
+-    set (a user/session-level model change in between clears the marker without
+-    touching the model — never override an explicit later pick). Success clears
+-    the marker and logs (recovery is the quiet default: no chat notice);
+-    failure keeps the fallback for this turn. Never raises.
++    THE single restore-probe body: the unattended surfaces call it bare (state
++    read from :data:`TURN_FALLBACK_ATTR`), and the dashboard's slot probe wraps
++    it (``chat_runner._probe_fallback_restore_for_slot_locked``) with the
++    slot-held state and hooks below, so the probe/witness/clear sequencing
++    cannot diverge across surfaces. The restore only fires while the session is
++    still on the fallback this feature set (a user/session-level model change
++    in between clears the sticky state without touching the model — never
++    override an explicit later pick). Success clears the state and logs
++    (recovery is the quiet default: no chat notice); failure keeps the fallback
++    for this turn. Never raises.
++
++    :param state: ``(primary, candidate)`` override. Default: read the
++        provider's :data:`TURN_FALLBACK_ATTR` marker (no-op when absent).
++    :param stale: caller-known extra staleness the marker cannot see (the
++        dashboard's explicit-pick generation check) — treated exactly like the
++        session having moved off the fallback.
++    :param clear: replaces the default marker clear (the dashboard drops slot
++        fields AND the marker as one logical record).
++    :param on_restored: hook running after a witnessed restore, before *clear*
++        (the dashboard's slot-model heal).
++    :param log_suffix: appended inside the log parentheses, e.g. ``", slot=k"``.
+     """
+-    state = getattr(provider, TURN_FALLBACK_ATTR, None)
+-    if not state:
+-        return
+-    try:
+-        primary, candidate = state
+-    except Exception:
+-        return
+-    current = provider_active_model(provider)
+-    if current and candidate and current.strip().lower() != str(candidate).strip().lower():
+-        # The session moved off our fallback by other means (explicit pick,
+-        # session reset). The marker is stale — drop it, restore nothing.
++    if state is None:
++        marker = getattr(provider, TURN_FALLBACK_ATTR, None)
++        if not marker:
++            return
+         try:
+-            setattr(provider, TURN_FALLBACK_ATTR, None)
++            primary, candidate = marker
+         except Exception:
+-            pass
+-        return
+-    if not primary:
++            return
++    else:
++        primary, candidate = state
++        if not candidate:
++            return
++
++    def _default_clear() -> None:
+         try:
+             setattr(provider, TURN_FALLBACK_ATTR, None)
+         except Exception:
+             pass
++
++    _clear = clear if clear is not None else _default_clear
++    current = provider_active_model(provider)
++    if current and candidate and current.strip().lower() != str(candidate).strip().lower():
++        # The session moved off our fallback by other means (explicit pick,
++        # session reset). The sticky state is stale — drop it, restore nothing.
++        _clear()
++        return
++    if stale or not primary:
++        _clear()
+         return
+     set_model_fn = resolve_substitute_set_model(provider)
+     if set_model_fn is None:
+@@ -510,11 +656,12 @@ async def probe_fallback_restore(provider: Any, *, surface: str = "unattended")
+         await set_model_fn(primary)
+     except Exception as exc:
+         logger.info(
+-            "model fallback: primary %s still unavailable (%s); staying on %s " "(surface=%s)",
++            "model fallback: primary %s still unavailable (%s); staying on %s " "(surface=%s%s)",
+             primary,
+             exc,
+             candidate,
+             surface,
++            log_suffix,
+         )
+         return
+     # Witness the restore before clearing: a non-raising set_model(primary)
+@@ -527,21 +674,22 @@ async def probe_fallback_restore(provider: Any, *, surface: str = "unattended")
+     if _raw and candidate and _raw.strip().lower() == str(candidate).strip().lower():
+         logger.info(
+             "model fallback: restore to %s was a silent no-op (still on %s); "
+-            "keeping fallback (surface=%s)",
++            "keeping fallback (surface=%s%s)",
+             primary,
+             candidate,
+             surface,
++            log_suffix,
+         )
+         return
+-    try:
+-        setattr(provider, TURN_FALLBACK_ATTR, None)
+-    except Exception:
+-        pass
++    if on_restored is not None:
++        on_restored()
++    _clear()
+     logger.warning(
+-        "model fallback: restored %s -> %s (reason=primary-recovered, surface=%s)",
++        "model fallback: restored %s -> %s (reason=primary-recovered, surface=%s%s)",
+         candidate,
+         primary,
+         surface,
++        log_suffix,
+     )
+ 
+ 
+@@ -1452,12 +1600,9 @@ async def stream_and_collect(
+                 and acp_error_is_transient(exc)
+                 and transient_attempts >= _TRANSIENT_RETRIES
+             ):
+-                if (
+-                    _fb_state.active is not None
+-                    and _fb_state.attempts < FALLBACK_CANDIDATE_ATTEMPTS
+-                ):
+-                    # Final attempt on the current candidate.
+-                    _fb_state.attempts += 1
++                if _fb_state.should_retry_active():
++                    # Final attempt on the current candidate — the shared
++                    # budget body already recorded it.
+                     delay = transient_retry_delay(1)
+                     logger.warning(
+                         "model fallback: candidate %s still failing (attempt %d/%d), "
+@@ -1481,21 +1626,18 @@ async def stream_and_collect(
+                     await asyncio.sleep(transient_retry_delay(1))
+                     retrying = True
+                     continue
+-                if _fb_state.walked:
++                _story = _fb_state.exhaustion_story()
++                if _story:
+                     # Chain exhausted: surface the ORIGINAL error class with the
+                     # chain's story attached for the delivering surface, and
+                     # keep the incident greppable.
+-                    _story = (
+-                        f"{_fb_state.primary or 'the selected model'} throttled; "
+-                        f"fallbacks {', '.join(_fb_state.walked)} also unavailable"
+-                    )
+                     logger.warning(
+                         "model fallback: chain exhausted (%s); surfacing original error: %s",
+                         _story,
+                         exc,
+                     )
+                     try:
+-                        exc._kc_fallback_story = _story  # type: ignore[attr-defined]
++                        setattr(exc, FALLBACK_STORY_ATTR, _story)
+                     except Exception:
+                         pass
+                 # Fall through to Case 2.5 / Case 3.
+diff --git a/src/kiro_crew/slack/gateway.py b/src/kiro_crew/slack/gateway.py
+index 8e6f922e6..1c43e1876 100644
+--- a/src/kiro_crew/slack/gateway.py
++++ b/src/kiro_crew/slack/gateway.py
+@@ -166,10 +166,11 @@ from kiro_crew.history import ConversationLog, HistoryConsolidator
+ from kiro_crew.hooks import HookManager, HooksConfig, hooks_config_from_config_dict
+ from kiro_crew.learn import LessonStore
+ from kiro_crew.llm_helpers import (
+-    TURN_FALLBACK_ATTR,
+     PromptBusyExhaustedError,
+     ToolApprovalPolicy,
+     acp_error_is_transient,
++    annotate_model_fallback,
++    append_fallback_story,
+     configured_fallback_chain,
+     provider_fallback_active,
+     provider_last_turn_usage,
+@@ -1096,32 +1097,11 @@ def _vet_at_claim_then(
+     return fn(*args)
+ 
+ 
+-def _annotate_model_fallback(text: str, provider: Any) -> str:
+-    """Prepend the throttle-fallback warning to a delivered unattended result.
+-
+-    Unattended surfaces (cron/heartbeat) have no chat card to announce a
+-    fallback swap on, so the delivered result text itself carries the warning —
+-    the same visibility contract as the interactive notice card, and the same
+-    pattern as the acquire-time ``_annotate_model_downgrade``. The marker is
+-    read from :data:`TURN_FALLBACK_ATTR` (set by ``stream_and_collect``'s
+-    fallback walk) and left in place: the swap is sticky for the session, so
+-    every run served by the fallback repeats the warning until the restore
+-    probe moves the session back. Model ids come from config, which is
+-    LLM-reachable via MCP — redact before they reach Slack/dashboard.
+-    """
+-    fb = getattr(provider, TURN_FALLBACK_ATTR, None)
+-    if not fb:
+-        return text
+-    try:
+-        primary, candidate = fb
+-    except Exception:
+-        return text
+-    safe_primary = redact_credentials(redact_exfiltration_urls(str(primary))[0])[0]
+-    safe_candidate = redact_credentials(redact_exfiltration_urls(str(candidate))[0])[0]
+-    return (
+-        f"⚠️ Model '{safe_primary}' throttled; this run was served by fallback "
+-        f"'{safe_candidate}'.\n\n" + text
+-    )
++# One spelling of the fallback-served warning for every unattended surface
++# (issue #5447 item 4): the body lives next to TURN_FALLBACK_ATTR in
++# llm_helpers; this module-level name is kept for the cron/heartbeat call
++# sites and their tests.
++_annotate_model_fallback = annotate_model_fallback
+ 
+ 
+ async def _cron_stream_with_posttoken_resume(
+@@ -4772,7 +4752,12 @@ class GatewayOrchestrator:
+                 if getattr(job, "_acp_retried", False):
+                     raise
+                 # ── Failure dedup: suppress repeated identical crash notifications ──
+-                exc_summary = f"{type(exc).__name__}: {exc}"
++                # A chain-exhaustion failure carries the fallback story on the
++                # exception (llm_helpers.FALLBACK_STORY_ATTR); append it so the
++                # alert names the whole walk, not just the last candidate's
++                # error. The story is deterministic for a given chain, so the
++                # dedup hash below still collapses repeats.
++                exc_summary = append_fallback_story(f"{type(exc).__name__}: {exc}", exc)
+                 exc_summary, _ = redact_exfiltration_urls(exc_summary)
+                 exc_summary, _ = redact_credentials(exc_summary)
+                 fh = _result_hash(exc_summary)
+diff --git a/src/kiro_crew/subagent.py b/src/kiro_crew/subagent.py
+index e2a3a1f18..de08eedc4 100644
+--- a/src/kiro_crew/subagent.py
++++ b/src/kiro_crew/subagent.py
+@@ -66,11 +66,13 @@ from kiro_crew.hooks import (
+ )
+ from kiro_crew.llm_helpers import (
+     FALLBACK_CANDIDATE_ATTEMPTS,
++    FALLBACK_STORY_ATTR,
+     TRANSIENT_RETRIES,
+-    TURN_FALLBACK_ATTR,
+     FallbackState,
+     acp_error_is_transient,
+     advance_fallback_candidate,
++    annotate_model_fallback,
++    append_fallback_story,
+     configured_fallback_chain,
+     provider_fallback_active,
+     transient_retry_delay,
+@@ -5113,7 +5115,7 @@ class SubagentManager:
+             logger.info("Subagent %s cancelled", info.id)
+         except Exception as exc:
+             if not info.reaped:
+-                info.error = _describe_exception(exc)
++                info.error = append_fallback_story(_describe_exception(exc), exc)
+                 info.done = True
+                 Stats().inc_subagent_failed()
+                 self._write_tombstone(info, "error")
+@@ -5879,12 +5881,7 @@ class SubagentManager:
+                         # llm_helpers Case 2.75 for the rationale.
+                         if not _fb_state.chain:
+                             raise
+-                        if (
+-                            _fb_state.active is not None
+-                            and _fb_state.attempts < FALLBACK_CANDIDATE_ATTEMPTS
+-                        ):
+-                            _fb_state.attempts += 1
+-                        else:
++                        if not _fb_state.should_retry_active():
+                             _cand = await advance_fallback_candidate(
+                                 client,
+                                 _fb_state,
+@@ -5892,12 +5889,8 @@ class SubagentManager:
+                                 log_suffix=f", id={info.id}",
+                             )
+                             if _cand is None:
+-                                if _fb_state.walked:
+-                                    _story = (
+-                                        f"{_fb_state.primary or 'the selected model'} "
+-                                        f"throttled; fallbacks "
+-                                        f"{', '.join(_fb_state.walked)} also unavailable"
+-                                    )
++                                _story = _fb_state.exhaustion_story()
++                                if _story:
+                                     logger.warning(
+                                         "model fallback: chain exhausted (%s) for "
+                                         "subagent %s; surfacing original error",
+@@ -5905,7 +5898,7 @@ class SubagentManager:
+                                         info.id,
+                                     )
+                                     try:
+-                                        exc._kc_fallback_story = _story  # type: ignore[attr-defined]
++                                        setattr(exc, FALLBACK_STORY_ATTR, _story)
+                                     except Exception:
+                                         pass
+                                 raise
+@@ -6418,22 +6411,10 @@ class SubagentManager:
+             cleaned, _ = redact_credentials(cleaned)
+         # Model-fallback visibility (agent.fallback_model): a run served by a
+         # fallback model must say so in the delivered result — same contract as
+-        # the cron/heartbeat annotation and the dashboard notice card. Model
+-        # ids come from config (LLM-reachable via MCP), so they pass the same
+-        # redaction as the result body.
+-        _fb_marker = getattr(client, TURN_FALLBACK_ATTR, None)
+-        if _fb_marker:
+-            try:
+-                _fb_primary, _fb_candidate = _fb_marker
+-                _fb_line = (
+-                    f"⚠️ Model '{_fb_primary}' throttled; this run was served by "
+-                    f"fallback '{_fb_candidate}'."
+-                )
+-                _fb_line, _ = redact_exfiltration_urls(_fb_line)
+-                _fb_line, _ = redact_credentials(_fb_line)
+-                cleaned = f"{_fb_line}\n\n{cleaned}" if cleaned else _fb_line
+-            except Exception:
+-                logger.debug("fallback annotation failed", exc_info=True)
++        # the cron/heartbeat annotation and the dashboard notice card. One
++        # shared spelling (llm_helpers.annotate_model_fallback) redacts the
++        # config-sourced model ids the same way as the result body.
++        cleaned = annotate_model_fallback(cleaned, client)
+         info.result = cleaned or "_No response._"
+         # Cap disk file and trim memory — gateway decides how much to show based on mode.
+         if info.result_path:
+diff --git a/test/test_cron_gateway_integration.py b/test/test_cron_gateway_integration.py
+index 8dcb10008..2f997183f 100644
+--- a/test/test_cron_gateway_integration.py
++++ b/test/test_cron_gateway_integration.py
+@@ -1228,6 +1228,66 @@ class TestThrottleFallbackCronWiring:
+         setattr(provider, TURN_FALLBACK_ATTR, ("only-one",))
+         assert _annotate_model_fallback("text", provider) == "text"
+ 
++    def test_gateway_annotator_is_the_shared_body(self):
++        """DRIFT PIN (#5447 item 4): the gateway name must BE the shared
++        helper next to TURN_FALLBACK_ATTR — not a re-spelled copy."""
++        from kiro_crew.llm_helpers import annotate_model_fallback
++        from kiro_crew.slack.gateway import _annotate_model_fallback
++
++        assert _annotate_model_fallback is annotate_model_fallback
++
++    @pytest.mark.asyncio
++    async def test_chain_exhaustion_story_reaches_the_failure_alert(self):
++        """#5447 item 1: a cron turn failing after the chain exhausted must
++        alert with the WHOLE walk (the story the walk attached to the
++        exception), not just the last candidate's error."""
++        from kiro_crew.acp.client import AcpError
++        from kiro_crew.llm_helpers import FALLBACK_STORY_ATTR
++
++        gw = _make_gw_for_llm()
++        job = _make_llm_job(model="")
++
++        exc = AcpError("Internal error: API Error: Internal server error")
++        setattr(
++            exc, FALLBACK_STORY_ATTR, "primary-m throttled; fallbacks fb-1, fb-2 also unavailable"
++        )
++
++        captured_cb = None
++        provider_mock = MagicMock()
++        gw.sessions.get_or_create = AsyncMock(return_value=(provider_mock, True, False))
++        _embed_mock = AsyncMock(return_value=("full prompt", None))
++        _stream_mock = AsyncMock(side_effect=exc)
++
++        with (
++            patch("kiro_crew.slack.gateway.CronService") as mock_cron_cls,
++            patch("kiro_crew.slack.gateway.run_in_embed_pool", _embed_mock),
++            patch("kiro_crew.slack.gateway.stream_and_collect", _stream_mock),
++            patch("kiro_crew.slack.gateway.sel"),
++            patch("kiro_crew.slack.gateway.build_cron_session_context") as mock_ctx,
++        ):
++            mock_ctx.return_value = (f"cron:{job.id}", job.message)
++
++            def capture_cron(on_job=None, **kw):
++                nonlocal captured_cb
++                captured_cb = on_job
++                svc = MagicMock()
++                svc.start = AsyncMock()
++                svc.remove_job_async = AsyncMock(return_value=True)
++                return svc
++
++            mock_cron_cls.create = AsyncMock(side_effect=capture_cron)
++            await gw._init_cron()
++            assert captured_cb is not None
++            with pytest.raises(AcpError):
++                await captured_cb(job)
++
++        bodies = [
++            str(c.args[2]) for c in gw.dashboard_state.notify.call_args_list if len(c.args) >= 3
++        ]
++        assert any(
++            "primary-m throttled" in b and "fb-1, fb-2 also unavailable" in b for b in bodies
++        ), f"expected the chain story in a failure alert, got {bodies!r}"
++
+ 
+ class TestExecutePreservesCallbackStatus:
+     """CronService._execute must not clobber a failure the callback reported by
+diff --git a/test/test_dashboard_chat.py b/test/test_dashboard_chat.py
+index 3ddc398d3..1fd6aff95 100644
+--- a/test/test_dashboard_chat.py
++++ b/test/test_dashboard_chat.py
+@@ -16041,6 +16041,50 @@ class TestRunChatModelFallback:
+         assert slot._fallback_candidate_idx == 0
+         assert slot._fallback_walked == []
+ 
++    @pytest.mark.asyncio
++    async def test_candidate_budget_routes_through_shared_rewind_body(self, tmp_path, monkeypatch):
++        """DRIFT PIN (#5447 item 2): the post-swap counter rewind must come
++        from llm_helpers.fallback_rewound_transient_budget — not a re-encoded
++        local constant. Patching the shared body to grant no extra pass drops
++        the candidate to a single attempt."""
++        from kiro_crew.acp.client import AcpError
++        from kiro_crew.dashboard.chat import _run_chat
++        from kiro_crew.llm_helpers import TRANSIENT_RETRIES
++
++        monkeypatch.setattr(
++            "kiro_crew.dashboard.chat_runner._agent_fallback_chain",
++            lambda: ("fallback-model",),
++        )
++        # Rewind to the exhaustion threshold: the re-queued attempt runs, and
++        # its failure immediately re-enters the fallback branch (no same-model
++        # retry pass) — one attempt on the candidate instead of two.
++        monkeypatch.setattr(
++            "kiro_crew.dashboard.chat_runner.fallback_rewound_transient_budget",
++            lambda: TRANSIENT_RETRIES,
++        )
++        call_count = 0
++
++        async def _stream(msg):
++            nonlocal call_count
++            call_count += 1
++            raise AcpError(self._TRANSIENT)
++            yield  # pragma: no cover
++
++        state = self._make_state(tmp_path, monkeypatch)
++        client = self._client(_stream)
++        self._wire_sessions(state, client)
++        slot = state.get_or_create_slot("s1")
++        slot._titled = True
++
++        with patch("asyncio.sleep", new_callable=AsyncMock):
++            await _run_chat(state, slot, "hello")
++            await self._drain_bg(state)
++
++        # 4 on the primary + only 1 on the candidate (vs 2 unpatched — see
++        # test_chain_exhaustion_surfaces_error_with_story).
++        assert call_count == TRANSIENT_RETRIES + 2
++        client.set_model.assert_awaited_once_with("fallback-model")
++
+     @pytest.mark.asyncio
+     async def test_restore_probe_fires_on_next_genuine_turn(self, tmp_path, monkeypatch):
+         """A sticky fallback from an earlier cycle is probed back to the
+@@ -16230,6 +16274,92 @@ class TestRunChatModelFallback:
+         assert slot.model == ""
+ 
+ 
++class TestSlotProbeWrapsSharedRestoreBody:
++    """DRIFT PIN (#5447 item 3): the slot restore probe is a thin adapter over
++    llm_helpers.probe_fallback_restore — only the slot pick-gen/heal/clear
++    logic lives locally. These tests pin the delegation and the slot-specific
++    hooks it hands over; the probe mechanics themselves are pinned in
++    test_llm_helpers.py and the end-to-end behavior in
++    TestRunChatModelFallback above."""
++
++    @staticmethod
++    def _slot(**overrides):
++        from types import SimpleNamespace
++
++        defaults = dict(
++            key="s1",
++            model="",
++            _model_pick_lock=None,
++            _active_fallback_model="fb-1",
++            _fallback_primary_model="primary-m",
++            _fallback_slot_model="",
++            _model_pick_gen=3,
++            _fallback_pick_gen=3,
++        )
++        defaults.update(overrides)
++        return SimpleNamespace(**defaults)
++
++    @pytest.mark.asyncio
++    async def test_delegates_slot_state_to_the_shared_body(self):
++        from kiro_crew.dashboard import chat_runner
++        from kiro_crew.llm_helpers import TURN_FALLBACK_ATTR
++
++        slot = self._slot()
++        client = MagicMock()
++        setattr(client, TURN_FALLBACK_ATTR, ("primary-m", "fb-1"))
++        with patch(
++            "kiro_crew.dashboard.chat_runner.probe_fallback_restore", new_callable=AsyncMock
++        ) as probe:
++            await chat_runner._probe_fallback_restore_for_slot(slot, client)
++
++        probe.assert_awaited_once()
++        kwargs = probe.await_args.kwargs
++        assert kwargs["surface"] == "dashboard"
++        assert kwargs["state"] == ("primary-m", "fb-1")
++        assert kwargs["stale"] is False
++        assert kwargs["log_suffix"] == ", slot=s1"
++        # The handed-over clear drops slot fields AND the provider marker as
++        # one logical record.
++        kwargs["clear"]()
++        assert slot._active_fallback_model == ""
++        assert slot._fallback_primary_model == ""
++        assert getattr(client, TURN_FALLBACK_ATTR) is None
++
++    @pytest.mark.asyncio
++    async def test_explicit_pick_generation_bump_rides_in_as_stale(self):
++        from kiro_crew.dashboard import chat_runner
++
++        slot = self._slot(_model_pick_gen=4)  # picked after the swap
++        with patch(
++            "kiro_crew.dashboard.chat_runner.probe_fallback_restore", new_callable=AsyncMock
++        ) as probe:
++            await chat_runner._probe_fallback_restore_for_slot(slot, MagicMock())
++        assert probe.await_args.kwargs["stale"] is True
++
++    @pytest.mark.asyncio
++    async def test_heal_hook_restores_the_activation_snapshot(self):
++        from kiro_crew.dashboard import chat_runner
++
++        slot = self._slot(model="fb-1", _fallback_slot_model="")  # backfilled pin
++        with patch(
++            "kiro_crew.dashboard.chat_runner.probe_fallback_restore", new_callable=AsyncMock
++        ) as probe:
++            await chat_runner._probe_fallback_restore_for_slot(slot, MagicMock())
++        probe.await_args.kwargs["on_restored"]()
++        assert slot.model == ""
++
++    @pytest.mark.asyncio
++    async def test_no_active_fallback_never_reaches_the_shared_body(self):
++        from kiro_crew.dashboard import chat_runner
++
++        slot = self._slot(_active_fallback_model="")
++        with patch(
++            "kiro_crew.dashboard.chat_runner.probe_fallback_restore", new_callable=AsyncMock
++        ) as probe:
++            await chat_runner._probe_fallback_restore_for_slot(slot, MagicMock())
++        probe.assert_not_awaited()
++
++
+ class TestSlotsGetWarmsGitLabAllowlist:
+     """GET /api/chat/slots warms the self-managed GitLab allowlist first.
+ 
+diff --git a/test/test_heartbeat_cycle_recycle.py b/test/test_heartbeat_cycle_recycle.py
+index d27b19966..34f7d8928 100644
+--- a/test/test_heartbeat_cycle_recycle.py
++++ b/test/test_heartbeat_cycle_recycle.py
+@@ -61,10 +61,7 @@ class TestOnCycleEndCallback:
+             order.append("cycle_end")
+ 
+         heartbeat_file.write_text(
+-            "# Heartbeat Tasks\n\n"
+-            "- [ ] task A\n"
+-            "- [ ] task B\n"
+-            "- [ ] task C\n",
++            "# Heartbeat Tasks\n\n" "- [ ] task A\n" "- [ ] task B\n" "- [ ] task C\n",
+             encoding="utf-8",
+         )
+ 
+@@ -106,10 +103,74 @@ class TestOnCycleEndCallback:
+ 
+         assert cycle_end_called == [True]
+ 
++    @pytest.mark.asyncio
++    async def test_failure_log_carries_the_fallback_story(self, heartbeat_file, caplog):
++        """#5447 item 1: the heartbeat's terminal error text (its failure log
++        line — heartbeat failures are kept + retried, never delivered) names
++        the WHOLE fallback walk carried on the exception, not just the last
++        candidate's error."""
++        import logging
++
++        from kiro_crew.llm_helpers import FALLBACK_STORY_ATTR
++
++        async def _on_task(text, deliver):
++            exc = RuntimeError("backend throttle 500")
++            setattr(
++                exc,
++                FALLBACK_STORY_ATTR,
++                "primary-m throttled; fallbacks fb-1, fb-2 also unavailable",
++            )
++            raise exc
++
++        heartbeat_file.write_text(
++            "# Heartbeat Tasks\n\n- [ ] some task\n",
++            encoding="utf-8",
++        )
++
++        svc = HeartbeatService(
++            memory=MagicMock(),
++            on_task=_on_task,
++        )
++        with caplog.at_level(logging.WARNING, logger="kiro_crew.heartbeat"):
++            await svc._process_heartbeat_file()
++
++        failed = [
++            r.getMessage() for r in caplog.records if "Heartbeat task failed" in r.getMessage()
++        ]
++        assert failed, "expected the failure log line"
++        assert any("fb-1, fb-2 also unavailable" in m for m in failed)
++
++    @pytest.mark.asyncio
++    async def test_storyless_failure_log_is_unchanged(self, heartbeat_file, caplog):
++        """No story on the exception ⇒ the log line is exactly the task text
++        (byte-for-byte pre-#5447 shape)."""
++        import logging
++
++        async def _on_task(text, deliver):
++            raise RuntimeError("plain boom")
++
++        heartbeat_file.write_text(
++            "# Heartbeat Tasks\n\n- [ ] some task\n",
++            encoding="utf-8",
++        )
++
++        svc = HeartbeatService(
++            memory=MagicMock(),
++            on_task=_on_task,
++        )
++        with caplog.at_level(logging.WARNING, logger="kiro_crew.heartbeat"):
++            await svc._process_heartbeat_file()
++
++        failed = [
++            r.getMessage() for r in caplog.records if "Heartbeat task failed" in r.getMessage()
++        ]
++        assert failed == ["Heartbeat task failed: some task"]
++
+     @pytest.mark.asyncio
+     async def test_callback_failure_does_not_crash_loop(self, heartbeat_file):
+         """A raising on_cycle_end must NOT propagate — the cycle is over,
+         and the periodic loop must keep ticking."""
++
+         async def _on_task(text, deliver):
+             return None
+ 
+diff --git a/test/test_llm_helpers.py b/test/test_llm_helpers.py
+index f98d417bb..3f236187e 100644
+--- a/test/test_llm_helpers.py
++++ b/test/test_llm_helpers.py
+@@ -1342,3 +1342,299 @@ class TestRecordInteractionEvent:
+ 
+         # Must not raise — best-effort only.
+         record_interaction_event(MagicMock(), "sess-3", "dashboard")
++
++
++class TestFallbackRetryBudgetSingleBody:
++    """#5447 item 2: the per-candidate retry budget lives in ONE place."""
++
++    def test_no_active_candidate_never_retries(self) -> None:
++        st = FallbackState(("m1",))
++        assert st.should_retry_active() is False
++        assert st.attempts == 0
++
++    def test_consumes_attempts_up_to_the_budget(self) -> None:
++        st = FallbackState(("m1",), active="m1", attempts=1)
++        # attempts=1 is how advance_fallback_candidate seeds a fresh candidate.
++        for expected in range(2, FALLBACK_CANDIDATE_ATTEMPTS + 1):
++            assert st.should_retry_active() is True
++            assert st.attempts == expected
++        assert st.should_retry_active() is False
++        assert st.attempts == FALLBACK_CANDIDATE_ATTEMPTS
++
++    def test_dashboard_rewind_derives_from_the_same_constant(self) -> None:
++        """The interactive ladder's counter rewind grants a fresh candidate
++        exactly FALLBACK_CANDIDATE_ATTEMPTS - 1 further same-model passes —
++        the same budget the unattended surfaces consume via
++        should_retry_active."""
++        from kiro_crew.llm_helpers import (
++            TRANSIENT_RETRIES,
++            fallback_rewound_transient_budget,
++        )
++
++        assert fallback_rewound_transient_budget() == TRANSIENT_RETRIES - (
++            FALLBACK_CANDIDATE_ATTEMPTS - 1
++        )
++
++
++class TestFallbackExhaustionStory:
++    """The chain-exhausted story is built in ONE place (FallbackState)."""
++
++    def test_story_names_primary_and_every_walked_candidate(self) -> None:
++        st = FallbackState(("a", "b"), primary="primary-m", walked=["a", "b"])
++        assert st.exhaustion_story() == ("primary-m throttled; fallbacks a, b also unavailable")
++
++    def test_unwalked_chain_has_no_story(self) -> None:
++        """Nothing actually ran (all candidates skipped) ⇒ the error surfaces
++        exactly as before the feature — no story."""
++        assert FallbackState(("a",), primary="p").exhaustion_story() is None
++
++    def test_unknown_primary_uses_placeholder(self) -> None:
++        story = FallbackState(("a",), walked=["a"]).exhaustion_story()
++        assert story is not None and story.startswith("the selected model throttled")
++
++
++class TestFallbackStoryConsumer:
++    """#5447 item 1: append_fallback_story is THE reader of the story attr."""
++
++    def _exc_with_story(self, story: str = "primary-m throttled; fallbacks fb-1 also unavailable"):
++        from kiro_crew.llm_helpers import FALLBACK_STORY_ATTR
++
++        exc = AcpError("Internal server error")
++        setattr(exc, FALLBACK_STORY_ATTR, story)
++        return exc
++
++    def test_appends_story_to_terminal_error_text(self) -> None:
++        from kiro_crew.llm_helpers import append_fallback_story
++
++        out = append_fallback_story("AcpError: Internal server error", self._exc_with_story())
++        assert out == (
++            "AcpError: Internal server error "
++            "[primary-m throttled; fallbacks fb-1 also unavailable]"
++        )
++
++    def test_no_story_returns_text_byte_for_byte(self) -> None:
++        from kiro_crew.llm_helpers import append_fallback_story
++
++        assert append_fallback_story("AcpError: boom", AcpError("boom")) == "AcpError: boom"
++
++    def test_empty_text_returns_bare_story(self) -> None:
++        from kiro_crew.llm_helpers import append_fallback_story
++
++        assert append_fallback_story("", self._exc_with_story("s")) == "s"
++
++    def test_non_string_story_attr_is_ignored(self) -> None:
++        from kiro_crew.llm_helpers import FALLBACK_STORY_ATTR, append_fallback_story
++
++        exc = AcpError("boom")
++        setattr(exc, FALLBACK_STORY_ATTR, ["not", "a", "string"])
++        assert append_fallback_story("t", exc) == "t"
++
++    def test_stream_and_collect_sets_the_attr_this_reads(self) -> None:
++        """DRIFT PIN: the producer (Case 2.75) and this consumer agree on the
++        attribute — fallback_story_of reads back what the walk attached."""
++        from kiro_crew.llm_helpers import FALLBACK_STORY_ATTR, fallback_story_of
++
++        exc = AcpError("boom")
++        setattr(exc, FALLBACK_STORY_ATTR, "the story")
++        assert fallback_story_of(exc) == "the story"
++        assert fallback_story_of(AcpError("boom")) == ""
++
++
++class TestAnnotateModelFallbackSharedBody:
++    """#5447 item 4: one spelling of the fallback-served warning."""
++
++    def test_prefixes_warning_from_marker(self) -> None:
++        from types import SimpleNamespace
++
++        from kiro_crew.llm_helpers import annotate_model_fallback
++
++        provider = SimpleNamespace()
++        setattr(provider, TURN_FALLBACK_ATTR, ("primary-m", "fb-m"))
++        out = annotate_model_fallback("body text", provider)
++        assert out.startswith("⚠️ Model 'primary-m' throttled")
++        assert "fallback 'fb-m'" in out
++        assert out.endswith("\n\nbody text")
++
++    def test_empty_text_yields_bare_warning_line(self) -> None:
++        """The sub-agent call site can pass an empty result — the warning
++        stands alone rather than trailing a blank separator."""
++        from types import SimpleNamespace
++
++        from kiro_crew.llm_helpers import annotate_model_fallback
++
++        provider = SimpleNamespace()
++        setattr(provider, TURN_FALLBACK_ATTR, ("primary-m", "fb-m"))
++        out = annotate_model_fallback("", provider)
++        assert out.startswith("⚠️ Model 'primary-m' throttled")
++        assert "\n\n" not in out
++
++    def test_no_marker_and_malformed_marker_are_noops(self) -> None:
++        from types import SimpleNamespace
++
++        from kiro_crew.llm_helpers import annotate_model_fallback
++
++        assert annotate_model_fallback("text", SimpleNamespace()) == "text"
++        provider = SimpleNamespace()
++        setattr(provider, TURN_FALLBACK_ATTR, ("only-one",))
++        assert annotate_model_fallback("text", provider) == "text"
++
++
++class TestProbeFallbackRestoreSlotSeams:
++    """#5447 item 3: the parameter seams the dashboard's slot probe wraps.
++
++    The slot probe (chat_runner._probe_fallback_restore_for_slot_locked) is a
++    thin adapter over this single body; these tests pin the seams it depends
++    on: slot-held state, the extra staleness flag, the replacement clear, and
++    the pre-clear heal hook.
++    """
++
++    @staticmethod
++    def _provider(served: str = "fb-1"):
++        provider = AsyncMock()
++        provider.served_model = served
++        provider._model = served
++
++        async def _move(model_id: str) -> None:
++            provider._model = model_id
++            provider.served_model = model_id
++
++        provider.set_model = AsyncMock(side_effect=_move)
++        return provider
++
++    @pytest.mark.asyncio
++    async def test_state_override_restores_and_runs_hooks_in_order(self) -> None:
++        provider = self._provider(served="fb-1")
++        order: list[str] = []
++        await probe_fallback_restore(
++            provider,
++            surface="dashboard",
++            state=("primary-model", "fb-1"),
++            clear=lambda: order.append("clear"),
++            on_restored=lambda: order.append("heal"),
++            log_suffix=", slot=s1",
++        )
++        provider.set_model.assert_awaited_once_with("primary-model")
++        # The heal must see the pre-clear state: heal strictly before clear.
++        assert order == ["heal", "clear"]
++
++    @pytest.mark.asyncio
++    async def test_stale_flag_clears_without_restoring(self) -> None:
++        """The dashboard's explicit-pick generation check rides in as `stale`:
++        an explicit pick must never be overridden by a restore."""
++        provider = self._provider(served="fb-1")
++        cleared: list[bool] = []
++        await probe_fallback_restore(
++            provider,
++            state=("primary-model", "fb-1"),
++            stale=True,
++            clear=lambda: cleared.append(True),
++        )
++        provider.set_model.assert_not_awaited()
++        assert cleared == [True]
++
++    @pytest.mark.asyncio
++    async def test_unknown_primary_clears_without_restoring(self) -> None:
++        provider = self._provider(served="fb-1")
++        cleared: list[bool] = []
++        await probe_fallback_restore(
++            provider,
++            state=("", "fb-1"),
++            clear=lambda: cleared.append(True),
++        )
++        provider.set_model.assert_not_awaited()
++        assert cleared == [True]
++
++    @pytest.mark.asyncio
++    async def test_empty_candidate_state_is_a_noop(self) -> None:
++        """Matches the slot probe's no-active-fallback early return: nothing
++        restored, nothing cleared."""
++        provider = self._provider()
++        cleared: list[bool] = []
++        await probe_fallback_restore(
++            provider,
++            state=("primary-model", ""),
++            clear=lambda: cleared.append(True),
++        )
++        provider.set_model.assert_not_awaited()
++        assert cleared == []
++
++    @pytest.mark.asyncio
++    async def test_failed_restore_keeps_state_and_skips_hooks(self) -> None:
++        provider = self._provider(served="fb-1")
++        provider.set_model = AsyncMock(side_effect=AcpError("throttled again"))
++        called: list[str] = []
++        await probe_fallback_restore(
++            provider,
++            state=("primary-model", "fb-1"),
++            clear=lambda: called.append("clear"),
++            on_restored=lambda: called.append("heal"),
++        )
++        assert called == []
++
++    @pytest.mark.asyncio
++    async def test_silent_noop_restore_keeps_state_and_skips_hooks(self) -> None:
++        """A non-raising set_model that did not move the session (witness
++        check) must keep the sticky state — clearing would let the backfill
++        pin the fallback permanently."""
++        provider = self._provider(served="fb-1")
++        provider.set_model = AsyncMock()  # returns without syncing the model
++        called: list[str] = []
++        await probe_fallback_restore(
++            provider,
++            state=("primary-model", "fb-1"),
++            clear=lambda: called.append("clear"),
++            on_restored=lambda: called.append("heal"),
++        )
++        provider.set_model.assert_awaited_once_with("primary-model")
++        assert called == []
++
++
++class TestCase275RoutesThroughSharedBudgetBody:
++    """DRIFT PIN (#5447 item 2): Case 2.75 must consult should_retry_active.
++
++    Mutation check in reverse: forcing the shared body to refuse retries
++    changes this surface's attempt count — proof the budget is not re-encoded
++    locally. The sub-agent ladder has the mirror pin in
++    test_subagent_turn_resilience.py.
++    """
++
++    _TRANSIENT = "Prompt error: {'message': 'Internal error: API Error: Internal server error'}"
++
++    @pytest.mark.asyncio
++    async def test_forcing_the_shared_body_to_refuse_drops_candidate_retries(self) -> None:
++        from kiro_crew.llm_helpers import _TRANSIENT_RETRIES
++
++        call_count = 0
++
++        async def _stream(msg):
++            nonlocal call_count
++            call_count += 1
++            raise AcpError(self._TRANSIENT)
++            yield  # pragma: no cover
++
++        provider = AsyncMock()
++        provider.cancel = AsyncMock()
++        provider.shutdown = AsyncMock()
++        provider.stream = _stream
++        provider.available_models = MagicMock(
++            return_value=[{"modelId": "fb-1"}, {"modelId": "fb-2"}]
++        )
++        provider.served_model = "primary-model"
++        provider._model = "primary-model"
++
++        async def _move(model_id: str) -> None:
++            provider._model = model_id
++            provider.served_model = model_id
++
++        provider.set_model = AsyncMock(side_effect=_move)
++
++        with (
++            patch("asyncio.sleep", new_callable=AsyncMock),
++            patch.object(FallbackState, "should_retry_active", return_value=False),
++            pytest.raises(AcpError),
++        ):
++            await stream_and_collect(provider, "test", fallback_models=["fb-1", "fb-2"])
++
++        # Budget refused ⇒ each candidate gets only the single post-advance
++        # attempt: 4 same-model + 1 per candidate (vs 2 each normally).
++        assert call_count == (_TRANSIENT_RETRIES + 1) + 2
+diff --git a/test/test_subagent_turn_resilience.py b/test/test_subagent_turn_resilience.py
+index 2bd575a6b..1600b06ff 100644
+--- a/test/test_subagent_turn_resilience.py
++++ b/test/test_subagent_turn_resilience.py
+@@ -283,10 +283,59 @@ async def test_throttle_fallback_chain_exhausted_propagates():
+ 
+     assert info.done is True
+     assert "500" in info.error
++    # #5447 item 1: the terminal error text names the WHOLE walk, not just the
++    # last candidate's failure — the chain story is appended to info.error.
++    assert "primary-model throttled" in info.error
++    assert "fb-1" in info.error and "also unavailable" in info.error
+     assert len(calls) == 1 + TRANSIENT_RETRIES + FALLBACK_CANDIDATE_ATTEMPTS
+     provider.set_model.assert_awaited_once_with("fb-1")
+ 
+ 
++@pytest.mark.asyncio
++async def test_throttle_fallback_ladder_routes_through_shared_budget_body():
++    """DRIFT PIN (#5447 item 2): the ladder must consult
++    FallbackState.should_retry_active for the per-candidate budget. Forcing
++    the shared body to refuse retries changes the attempt count — proof the
++    budget is not re-encoded locally (mirror of the stream_and_collect pin in
++    test_llm_helpers.py)."""
++    from kiro_crew.llm_helpers import FallbackState
++
++    calls: list[str] = []
++
++    def stream_factory(msg: str, *a, **kw):
++        calls.append(msg)
++
++        async def _gen():
++            raise _TransientError("backend throttle 500")
++            yield  # noqa: unreachable — async generator marker
++
++        return _gen()
++
++    sessions = _mock_sessions(stream_factory)
++    provider = sessions._provider
++    provider.available_models = MagicMock(return_value=[{"modelId": "fb-1"}])
++    provider.served_model = "primary-model"
++    provider._model = "primary-model"
++
++    async def _move(model_id):
++        provider._model = model_id
++        provider.served_model = model_id
++
++    provider.set_model = AsyncMock(side_effect=_move)
++
++    mgr = _manager(sessions)
++    with (
++        patch("kiro_crew.subagent.transient_retry_delay", return_value=0.0),
++        patch("kiro_crew.subagent.configured_fallback_chain", return_value=("fb-1",)),
++        patch.object(FallbackState, "should_retry_active", return_value=False),
++    ):
++        info = await _spawn_and_wait(mgr)
++
++    assert info.done is True
++    # Budget refused ⇒ the candidate gets only its single post-advance attempt.
++    assert len(calls) == 1 + TRANSIENT_RETRIES + 1
++
++
+ @pytest.mark.asyncio
+ async def test_non_transient_error_fails_immediately():
+     calls: list[str] = []
