@@ -2004,16 +2004,18 @@ function AgentIdentitySection() {
     queryFn: api.getAgentcoreIdentity,
   })
   const [draft, setDraft] = useState<'none' | 'workload' | 'login'>('none')
+  const [draftUrl, setDraftUrl] = useState('')
   useEffect(() => {
     setDraft(data?.posture === 'login' || data?.posture === 'workload' ? data.posture : 'none')
-  }, [data?.posture])
+    setDraftUrl(data?.gateway_url ?? '')
+  }, [data?.posture, data?.gateway_url])
   const save = useMutation({
-    mutationFn: () => api.saveAgentcoreIdentity({ posture: draft }),
+    mutationFn: () => api.saveAgentcoreIdentity({ posture: draft, gateway_url: draftUrl.trim() }),
     onSuccess: next => {
       queryClient.setQueryData(['agentcore-identity'], next)
     },
   })
-  const dirty = (data?.posture ?? 'none') !== draft
+  const dirty = (data?.posture ?? 'none') !== draft || (data?.gateway_url ?? '') !== draftUrl.trim()
   const blocked = Boolean(data && !data.writable)
   const { data: consent, isError: consentError } = useQuery<AgentcoreConsentData>({
     queryKey: ['agentcore-consent'],
@@ -2061,6 +2063,25 @@ function AgentIdentitySection() {
                   <option value="login">{i18nT(IDENTITY_POSTURE_KEY.login)}</option>
                 </select>
               </label>
+              {draft !== 'none' && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[13px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_gateway_url')}</span>
+                  <input
+                    type="url"
+                    spellCheck={false}
+                    autoComplete="off"
+                    aria-label={i18nT('pages.settings.securityPanel.agent_identity_gateway_url')}
+                    className="bg-bg-elevated border border-border rounded-md px-2 py-1.5 text-text text-sm outline-none focus-ring font-mono"
+                    value={draftUrl}
+                    disabled={blocked || save.isPending}
+                    placeholder={i18nT('pages.settings.securityPanel.agent_identity_gateway_url_placeholder')}
+                    onChange={e => setDraftUrl(e.target.value)}
+                  />
+                  <span className="text-[12px] text-muted leading-relaxed">
+                    {i18nT('pages.settings.securityPanel.agent_identity_gateway_url_hint')}
+                  </span>
+                </label>
+              )}
               {blocked && (
                 <p className="text-[12px] text-muted">{i18nT('pages.settings.securityPanel.agent_identity_not_writable')}</p>
               )}

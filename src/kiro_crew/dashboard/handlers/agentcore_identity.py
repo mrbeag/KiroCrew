@@ -27,8 +27,10 @@ from aiohttp import web
 
 from kiro_crew.platform.agentcore_aws import (
     DEFAULT_WORKLOAD_NAME,
+    ENV_GATEWAY_URL,
     ensure_extra,
     extra_snapshot,
+    normalize_agentcore_gateway_url,
 )
 from kiro_crew.platform.context import current_context
 from kiro_crew.platform.governance import (
@@ -85,8 +87,8 @@ def _workload_name(posture: str | None = None) -> str:
     return ""
 
 
-def _file_posture() -> str | None:
-    """Posture authored in the standalone home file, if any.
+def _file_row() -> dict[str, Any] | None:
+    """Enabled ``capabilities.agentcore`` object from the home file, if any.
 
     Peek only — do not parse_policy. GET must still render when the
     running ceiling is stale (boot-frozen) or the file is not yet loaded.
@@ -106,8 +108,38 @@ def _file_posture() -> str | None:
     row = caps.get("agentcore")
     if not isinstance(row, dict) or not row.get("enabled"):
         return None
+    return row
+
+
+def _file_posture() -> str | None:
+    row = _file_row()
+    if row is None:
+        return None
     posture = str(row.get("posture") or "").strip().lower()
     return posture if posture in {"workload", "login"} else None
+
+
+def _file_gateway_url() -> str:
+    row = _file_row()
+    if row is None:
+        return ""
+    raw = row.get("gateway_url")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    try:
+        return normalize_agentcore_gateway_url(raw)
+    except ValueError:
+        return ""
+
+
+def _env_gateway_url() -> str:
+    raw = os.environ.get(ENV_GATEWAY_URL, "").strip()
+    if not raw:
+        return ""
+    try:
+        return normalize_agentcore_gateway_url(raw)
+    except ValueError:
+        return ""
 
 
 def _write_reason() -> str:
@@ -155,10 +187,14 @@ def _snapshot(*, last_extra_code: str | None = None) -> dict[str, Any]:
             source = "unset"
         restart = authored is not None and authored != running
     name = _workload_name(displayed)
+    file_url = _file_gateway_url()
+    env_url = _env_gateway_url()
+    gateway_url = file_url or env_url
     payload: dict[str, Any] = {
         "configured": displayed is not None,
         "posture": displayed,
         "workload_name": name,
+        "gateway_url": gateway_url,
         "source": source,
         "writable": reason == "",
         "write_blocked": reason or None,
@@ -192,7 +228,9 @@ def _write_home_document(data: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def _apply_posture(data: dict[str, Any], posture: str) -> dict[str, Any]:
+def _apply_posture(
+    data: dict[str, Any], posture: str, *, gateway_url: str | None = None
+) -> dict[str, Any]:
     caps = data.get("capabilities")
     if not isinstance(caps, dict):
         caps = {}
@@ -201,7 +239,15 @@ def _apply_posture(data: dict[str, Any], posture: str) -> dict[str, Any]:
         if "agentcore" in caps:
             caps["agentcore"] = {"enabled": False}
         return data
-    caps["agentcore"] = {"enabled": True, "posture": posture}
+    existing = ""
+    previous = caps.get("agentcore")
+    if isinstance(previous, dict) and isinstance(previous.get("gateway_url"), str):
+        existing = previous["gateway_url"].strip()
+    row: dict[str, Any] = {"enabled": True, "posture": posture}
+    chosen = existing if gateway_url is None else gateway_url
+    if chosen:
+        row["gateway_url"] = chosen
+    caps["agentcore"] = row
     if "boot" not in data or not isinstance(data.get("boot"), dict):
         data["boot"] = dict(_MINIMAL_BOOT)
     if data.get("version") != 1:
@@ -220,6 +266,7 @@ async def api_agentcore_identity_get(request: web.Request) -> web.Response:
             "configured": False,
             "posture": None,
             "workload_name": _workload_name(),
+            "gateway_url": "",
             "source": "unset",
             "writable": False,
             "write_blocked": "unavailable",
@@ -322,6 +369,32 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             status=400,
         )
     posture = raw.strip().lower()
+    gateway_url: str | None = None
+    if "gateway_url" in body:
+        raw_url = body.get("gateway_url")
+        if raw_url is None:
+            gateway_url = ""
+        elif not isinstance(raw_url, str):
+            _audit(request, operation=OP_SAVE, outcome="denied", resources="bad_gateway_url")
+            return web.json_response(
+                {
+                    "error": "gateway_url must be an https URL or empty",
+                    "code": "invalid_agentcore_gateway_url",
+                },
+                status=400,
+            )
+        else:
+            try:
+                gateway_url = normalize_agentcore_gateway_url(raw_url)
+            except ValueError:
+                _audit(request, operation=OP_SAVE, outcome="denied", resources="bad_gateway_url")
+                return web.json_response(
+                    {
+                        "error": "gateway_url must be an https URL without credentials",
+                        "code": "invalid_agentcore_gateway_url",
+                    },
+                    status=400,
+                )
     blocked = _write_reason()
     if blocked:
         _audit(
@@ -346,7 +419,7 @@ async def api_agentcore_identity_save(request: web.Request) -> web.Response:
             _audit(request, operation=OP_SAVE, outcome="success", resources="none")
             return web.json_response(payload)
         data = _read_home_document()
-        _apply_posture(data, posture)
+        _apply_posture(data, posture, gateway_url=gateway_url)
         _write_home_document(data)
     except PlatformCompositionError as exc:
         _audit(request, operation=OP_SAVE, outcome="denied", error=str(exc))

@@ -137,6 +137,7 @@ const IDENTITY_UNSET = {
   restart_required: false,
   extra_installed: false,
   extra_code: null,
+  gateway_url: '',
 }
 
 const CONSENT_IDLE = { pending: false, url: null } as const
@@ -1876,7 +1877,7 @@ describe('SecurityPanel — agent identity', () => {
     fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }))
 
     await waitFor(() =>
-      expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({ posture: 'workload' }),
+      expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({ posture: 'workload', gateway_url: '' }),
     )
     expect(
       await screen.findByText(i18nT('pages.settings.securityPanel.agent_identity_restart')),
@@ -1934,6 +1935,33 @@ describe('SecurityPanel — agent identity', () => {
     })
     expect(link).toHaveAttribute('href', 'https://github.com/login/oauth/authorize')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('saves an existing AgentCore Gateway URL for this crew', async () => {
+    ;(api.saveAgentcoreIdentity as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...IDENTITY_UNSET,
+      configured: true,
+      posture: 'workload',
+      source: 'policy',
+      gateway_url: 'https://gw.example.test/mcp',
+      restart_required: true,
+    })
+    renderWithProviders(<SecurityPanel />, { route: '/?section=identity' })
+
+    const select = await screen.findByLabelText(i18nT('pages.settings.securityPanel.agent_identity_posture'))
+    fireEvent.change(select, { target: { value: 'workload' } })
+    fireEvent.change(
+      screen.getByLabelText(i18nT('pages.settings.securityPanel.agent_identity_gateway_url')),
+      { target: { value: 'https://gw.example.test/mcp' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: i18nT('pages.settings.securityPanel.agent_identity_save') }))
+
+    await waitFor(() =>
+      expect(api.saveAgentcoreIdentity).toHaveBeenCalledWith({
+        posture: 'workload',
+        gateway_url: 'https://gw.example.test/mcp',
+      }),
+    )
   })
 
   it('explains when this gateway cannot install AgentCore support', async () => {

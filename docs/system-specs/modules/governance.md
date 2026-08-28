@@ -1288,8 +1288,12 @@ A write to `workload` or `login` also installs `kirocrew[agentcore]` into this
 gateway interpreter (`ensure_extra`); GET never pips. The snapshot carries
 `extra_installed` and `extra_code` (`ok` / `no_install_channel` /
 `install_failed` / `null`). A Settings-only configure with no systemd name
-uses the RFC default workload name `kirocrew`. This is not a Remote Crew /
-launch control: a hub launching another box is a different crew.
+uses the RFC default workload name `kirocrew`. PUT also accepts optional
+`gateway_url` (https MCP URL, no credentials) on the same
+`capabilities.agentcore` row — policy-only, like `posture`. GET returns the
+authored URL (policy first, else launch env). A profile cannot carry
+`gateway_url`. This is not a Remote Crew / launch control: a hub launching
+another box is a different crew.
 
 `capabilities.publish` is a `CapabilityGate` (opt-in: `capability_default=False`)
 with an inner `destinations` `ScopedRuleset` (`identifier` matcher) bounding

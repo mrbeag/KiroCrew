@@ -101,11 +101,22 @@ def test_gateway_mcp_spec_requires_https(monkeypatch) -> None:
 
     provider = aws_mod.AwsAgentIdentityProvider()
     monkeypatch.delenv(aws_mod.ENV_GATEWAY_URL, raising=False)
+    monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
     assert provider.gateway_mcp_spec() is None
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "http://insecure.example/mcp")
     assert provider.gateway_mcp_spec() is None
     monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://gw.example.test/mcp")
     assert provider.gateway_mcp_spec() == {"url": "https://gw.example.test/mcp"}
+
+
+def test_resolved_gateway_url_prefers_policy_over_env(monkeypatch) -> None:
+    from kiro_crew.platform import agentcore_aws as aws_mod
+
+    monkeypatch.setenv(aws_mod.ENV_GATEWAY_URL, "https://env.example.test/mcp")
+    monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "https://policy.example.test/mcp")
+    assert aws_mod.resolved_gateway_url() == "https://policy.example.test/mcp"
+    monkeypatch.setattr(aws_mod, "authored_gateway_url", lambda: "")
+    assert aws_mod.resolved_gateway_url() == "https://env.example.test/mcp"
 
 
 def test_vend_workload_access_token_uses_standalone_api(monkeypatch) -> None:

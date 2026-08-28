@@ -17,9 +17,14 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.parse import urlparse
 
 from kiro_crew.cloud import aws
+from kiro_crew.platform import agentcore_aws as _agentcore_aws
+
+# Launch/CFN callers keep importing these from this module. The owner is
+# ``platform.agentcore_aws`` so Settings/policy and UserData share one check.
+AGENTCORE_GATEWAY_URL_MAX = _agentcore_aws.AGENTCORE_GATEWAY_URL_MAX
+normalize_agentcore_gateway_url = _agentcore_aws.normalize_agentcore_gateway_url
 
 # Resource tag every launcher-created resource carries (mirrors deploy-web's
 # kirocrew:managed). Scopes the tag-conditioned statements below.
@@ -181,34 +186,6 @@ def normalize_agentcore_posture(value: str | None) -> str:
     if raw not in _AGENTCORE_LAUNCH_POSTURES:
         raise ValueError(f"unknown agentcore posture: {value!r}; expected none, workload, or login")
     return raw
-
-
-# CloudFormation UserData expands this into a systemd Environment= line; the
-# worst-case table in test_cloud_ec2.TestUserDataSize pins the same ceiling.
-AGENTCORE_GATEWAY_URL_MAX = 512
-
-
-def normalize_agentcore_gateway_url(value: str | None) -> str:
-    """Return a stripped https Gateway MCP URL, or empty.
-
-    Rejects credentials-in-URL, non-https, and over-long values so a launch
-    cannot write an arbitrary Environment= line into the instance unit.
-    """
-    url = (value or "").strip()
-    if not url:
-        return ""
-    if len(url) > AGENTCORE_GATEWAY_URL_MAX:
-        raise ValueError(f"agentcore_gateway_url exceeds {AGENTCORE_GATEWAY_URL_MAX} characters")
-    parsed = urlparse(url)
-    if (
-        parsed.scheme != "https"
-        or not parsed.netloc
-        or parsed.username
-        or parsed.password
-        or parsed.fragment
-    ):
-        raise ValueError("agentcore_gateway_url must be an https URL without credentials")
-    return url
 
 
 def agentcore_workload_name(tag: str, posture: str) -> str:

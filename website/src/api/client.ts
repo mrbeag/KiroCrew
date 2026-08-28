@@ -340,6 +340,7 @@ export interface AgentcoreIdentityData {
   configured: boolean
   posture: 'workload' | 'login' | null
   workload_name: string
+  gateway_url: string
   source: 'policy' | 'env' | 'unset'
   writable: boolean
   write_blocked?: string | null
@@ -3297,8 +3298,10 @@ export const api = {
   // the panel re-renders from server truth rather than its optimistic guess.
   getAgentcoreIdentity: () =>
     get('/api/agentcore/identity').then(j) as Promise<AgentcoreIdentityData>,
-  saveAgentcoreIdentity: (body: { posture: 'none' | 'workload' | 'login' }) =>
-    put('/api/agentcore/identity', body).then(j) as Promise<AgentcoreIdentityData>,
+  saveAgentcoreIdentity: (body: {
+    posture: 'none' | 'workload' | 'login'
+    gateway_url?: string
+  }) => put('/api/agentcore/identity', body).then(j) as Promise<AgentcoreIdentityData>,
   getAgentcoreConsent: () =>
     get('/api/agentcore/consent').then(j) as Promise<AgentcoreConsentData>,
   getComputerUseConfig: () => get('/api/computer-use/config').then(j) as Promise<ComputerUseConfigData>,

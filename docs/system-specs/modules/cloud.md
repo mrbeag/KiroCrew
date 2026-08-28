@@ -124,6 +124,8 @@ so `platform/agentcore_aws.py` can vend a workload token without a companion
 package. A crew that configures identity later (home `security_policy.json`
 or Settings → Security → Agent identity) also force-installs that extra
 into the running gateway interpreter; the adapter attaches on the next boot.
+The same Settings/policy row accepts `gateway_url` for an existing Gateway
+MCP URL — the template still does not create the Gateway or its targets.
 A desktop bundle or PEP 668 interpreter reports `no_install_channel` instead
 of writing into a locked tree.
 

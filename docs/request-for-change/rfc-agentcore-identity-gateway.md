@@ -280,7 +280,9 @@ in the same CloudFormation stack that creates the instance.
   home policy or env posture is already `workload`/`login`, so a
   box that skipped the CFN flag still gets boto3. The in-repo extra
   (`platform/agentcore_aws.py`) reads those env vars (workload name
-  defaults to `kirocrew` when only the policy is set) and calls
+  defaults to `kirocrew` when only the policy is set) and the
+  Gateway MCP URL from `capabilities.agentcore.gateway_url` (Settings
+  / policy first) or `KIROCREW_AGENTCORE_GATEWAY_URL`. It calls
   `GetWorkloadAccessToken*` through a lazy boto3 client.
   Public core never imports the `bedrock-agentcore` SDK package and
   never registers `kirocrew.plugins`.

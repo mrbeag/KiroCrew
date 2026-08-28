@@ -708,6 +708,46 @@ class TestAgentIdentitySeam:
                 }
             )
 
+    def test_agent_identity_policy_gateway_url_is_stored(self) -> None:
+        from kiro_crew.platform.governance import agentcore_gateway_url
+
+        ceiling = parse_policy(
+            _agentcore_policy_body(
+                agentcore={
+                    "enabled": True,
+                    "posture": "workload",
+                    "gateway_url": "https://gw.example.test/mcp",
+                }
+            )
+        )
+        assert agentcore_gateway_url(ceiling) == "https://gw.example.test/mcp"
+
+    def test_agent_identity_policy_rejects_http_gateway_url(self) -> None:
+        with pytest.raises(PlatformCompositionError, match="https"):
+            parse_policy(
+                _agentcore_policy_body(
+                    agentcore={
+                        "enabled": True,
+                        "posture": "workload",
+                        "gateway_url": "http://insecure.example/mcp",
+                    }
+                )
+            )
+
+    def test_agent_identity_profile_carrying_gateway_url_is_rejected(self) -> None:
+        with pytest.raises(PlatformCompositionError, match="gateway_url"):
+            parse_profile(
+                {
+                    "name": "host",
+                    "capabilities": {
+                        "agentcore": {
+                            "enabled": True,
+                            "gateway_url": "https://gw.example.test/mcp",
+                        },
+                    },
+                }
+            )
+
     def test_agent_identity_profile_disabled_row_does_not_require_posture(self) -> None:
         profile = parse_profile({"name": "host", "capabilities": {"agentcore": {"enabled": False}}})
         gate = profile.controls["capabilities.agentcore"]

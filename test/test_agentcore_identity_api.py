@@ -203,6 +203,56 @@ def test_put_none_does_not_install_extra(tmp_path: Path, monkeypatch) -> None:
     assert calls == []
 
 
+def test_put_writes_gateway_url(tmp_path: Path, monkeypatch) -> None:
+    home = _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "gateway_url": "https://gw.example.test/mcp"})
+        )
+    )
+    assert resp.status == 200
+    data = json.loads(home.read_text(encoding="utf-8"))
+    assert data["capabilities"]["agentcore"]["gateway_url"] == "https://gw.example.test/mcp"
+    body = json.loads(resp.text)
+    assert body["gateway_url"] == "https://gw.example.test/mcp"
+
+
+def test_put_rejects_http_gateway_url(tmp_path: Path, monkeypatch) -> None:
+    _isolate(monkeypatch, tmp_path)
+    resp = asyncio.run(
+        mod.api_agentcore_identity_save(
+            _Req({"posture": "workload", "gateway_url": "http://insecure.example/mcp"})
+        )
+    )
+    assert resp.status == 400
+    assert json.loads(resp.text)["code"] == "invalid_agentcore_gateway_url"
+
+
+def test_put_keeps_existing_gateway_url_when_omitted(tmp_path: Path, monkeypatch) -> None:
+    home = _isolate(monkeypatch, tmp_path)
+    home.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "boot": {"require_sandbox": True, "allow_terminal": False, "fail_closed": True},
+                "capabilities": {
+                    "agentcore": {
+                        "enabled": True,
+                        "posture": "workload",
+                        "gateway_url": "https://gw.example.test/mcp",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    resp = asyncio.run(mod.api_agentcore_identity_save(_Req({"posture": "login"})))
+    assert resp.status == 200
+    data = json.loads(home.read_text(encoding="utf-8"))
+    assert data["capabilities"]["agentcore"]["posture"] == "login"
+    assert data["capabilities"]["agentcore"]["gateway_url"] == "https://gw.example.test/mcp"
+
+
 def test_get_does_not_install_extra(tmp_path: Path, monkeypatch) -> None:
     calls: list[str] = []
     _isolate(monkeypatch, tmp_path)

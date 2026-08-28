@@ -93,6 +93,7 @@ describe('SecurityPanel — tailnet origin', () => {
       restart_required: false,
       extra_installed: false,
       extra_code: null,
+      gateway_url: '',
     })
     ;(api.getAgentcoreConsent as ReturnType<typeof vi.fn>).mockResolvedValue({
       pending: false,

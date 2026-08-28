@@ -28,6 +28,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from kiro_crew.constants import env_flag_enabled
 from kiro_crew.platform.interfaces import (
@@ -50,6 +51,8 @@ EXTRA_CODE_OK = "ok"
 EXTRA_CODE_NO_CHANNEL = "no_install_channel"
 EXTRA_CODE_FAILED = "install_failed"
 EXTRA_REQ_WHEEL = "kirocrew[agentcore]"
+# Same ceiling the CFN UserData Environment= line is pinned to.
+AGENTCORE_GATEWAY_URL_MAX = 512
 # boto3 client name (lazy). Not the ``bedrock-agentcore`` SDK package.
 _CLIENT = "bedrock-agentcore"
 _JWT_FALLBACK_TTL_SECS = 300.0
@@ -88,8 +91,32 @@ def pip_install_channel_available() -> bool:
     return not (Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").exists()
 
 
-def authored_posture() -> str | None:
-    """Posture authored in the standalone home file, if any.
+def normalize_agentcore_gateway_url(value: str | None) -> str:
+    """Return a stripped https Gateway MCP URL, or empty.
+
+    Rejects credentials-in-URL, non-https, fragments, and over-long values
+    so a policy write or launch Environment= line cannot carry an arbitrary
+    credentialed URL.
+    """
+    url = (value or "").strip()
+    if not url:
+        return ""
+    if len(url) > AGENTCORE_GATEWAY_URL_MAX:
+        raise ValueError(f"agentcore_gateway_url exceeds {AGENTCORE_GATEWAY_URL_MAX} characters")
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        raise ValueError("agentcore_gateway_url must be an https URL without credentials")
+    return url
+
+
+def authored_agentcore_row() -> dict[str, Any] | None:
+    """Enabled ``capabilities.agentcore`` object from the standalone home file.
 
     Peek only — do not parse_policy. Bootstrap and Settings need to see a
     just-written file even when the running ceiling is still boot-frozen.
@@ -111,8 +138,50 @@ def authored_posture() -> str | None:
     row = caps.get("agentcore")
     if not isinstance(row, dict) or not row.get("enabled"):
         return None
+    return row
+
+
+def authored_posture() -> str | None:
+    """Posture authored in the standalone home file, if any."""
+    row = authored_agentcore_row()
+    if row is None:
+        return None
     posture = str(row.get("posture") or "").strip().lower()
     return posture if posture in _CONFIGURED_POSTURES else None
+
+
+def authored_gateway_url() -> str:
+    """Gateway MCP URL authored in the standalone home file, if any."""
+    row = authored_agentcore_row()
+    if row is None:
+        return ""
+    raw = row.get("gateway_url")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    try:
+        return normalize_agentcore_gateway_url(raw)
+    except ValueError:
+        return ""
+
+
+def resolved_gateway_url() -> str:
+    """Policy URL first (Settings / hand-edited policy), else launch env.
+
+    A crew that configures the Gateway in Settings must not stay stuck on
+    a leftover systemd URL. Env is the CFN fallback when the home file
+    has no URL yet.
+    """
+    authored = authored_gateway_url()
+    if authored:
+        return authored
+    raw = _env(ENV_GATEWAY_URL)
+    if not raw:
+        return ""
+    try:
+        return normalize_agentcore_gateway_url(raw)
+    except ValueError:
+        logger.warning("KIROCREW_AGENTCORE_GATEWAY_URL is not a usable https URL")
+        return ""
 
 
 def opted_in() -> bool:
@@ -241,12 +310,12 @@ class AwsAgentIdentityProvider:
         return {
             "credentialKind": kind,
             "vaultedOwnerToken": False,
-            "gatewayUrlConfigured": bool(_env(ENV_GATEWAY_URL)),
+            "gatewayUrlConfigured": bool(resolved_gateway_url()),
             "adapter": "aws",
         }
 
     def gateway_mcp_spec(self) -> dict[str, object] | None:
-        url = _env(ENV_GATEWAY_URL)
+        url = resolved_gateway_url()
         if not url.startswith("https://"):
             return None
         return {"url": url}
@@ -284,7 +353,7 @@ class AwsAgentIdentityProvider:
             scheme="bearer",
             token=jwt,
             expires_at=_jwt_exp(jwt),
-            audience=_env(ENV_GATEWAY_URL),
+            audience=resolved_gateway_url(),
         )
 
 

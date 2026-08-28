@@ -1391,6 +1391,11 @@ class GovernanceCeiling:
     # disabled. A profile cannot compose a different posture onto this field
     # (policy-wins).
     agentcore_identity_posture: Optional[str] = None
+    # Policy-only Gateway MCP URL (``capabilities.agentcore.gateway_url``).
+    # Empty when omitted or the capability is off. Not a CapabilityGate field.
+    # A profile cannot carry this key. Read through
+    # :func:`agentcore_gateway_url`.
+    agentcore_gateway_url: str = ""
 
     def get(self, scope: str) -> Optional[object]:
         return self.controls.get(scope)
@@ -1513,6 +1518,7 @@ def _command_deny_patterns(control: object) -> Tuple[str, ...]:
 
 _AGENTCORE_SCOPE = "capabilities.agentcore"
 _AGENTCORE_POSTURES = frozenset({"workload", "login"})
+_AGENTCORE_POLICY_ONLY = frozenset({"posture", "gateway_url"})
 
 
 def _capability_raw_for_gate(
@@ -1520,19 +1526,24 @@ def _capability_raw_for_gate(
 ) -> Mapping[str, object]:
     """Drop inner policy data that is not a CapabilityGate field.
 
-    ``capabilities.agentcore.posture`` is policy data, not a second scope and
-    not an evaluator input. Strip it on a policy document so
-    ``CapabilityGate.from_dict`` stays ``additionalProperties: false``. A
-    profile (or policy fallback body) that carries ``posture`` is rejected —
-    Rule 6, same fail-closed raise as ``ScopedMap.posture``.
+    ``capabilities.agentcore.posture`` and ``gateway_url`` are policy data,
+    not a second scope and not an evaluator input. Strip them on a policy
+    document so ``CapabilityGate.from_dict`` stays
+    ``additionalProperties: false``. A profile (or policy fallback body)
+    that carries either key is rejected — Rule 6, same fail-closed raise
+    as ``ScopedMap.posture``.
     """
-    if scope != _AGENTCORE_SCOPE or "posture" not in raw:
+    if scope != _AGENTCORE_SCOPE:
+        return raw
+    extra = _AGENTCORE_POLICY_ONLY.intersection(raw)
+    if not extra:
         return raw
     if not is_policy:
+        name = "posture" if "posture" in extra else next(iter(extra))
         raise PlatformCompositionError(
-            "capabilities.agentcore.posture is policy-only; not allowed on a profile"
+            f"capabilities.agentcore.{name} is policy-only; not allowed on a profile"
         )
-    return {key: value for key, value in raw.items() if key != "posture"}
+    return {key: value for key, value in raw.items() if key not in _AGENTCORE_POLICY_ONLY}
 
 
 def _apply_agentcore_posture(
@@ -1585,6 +1596,51 @@ def agentcore_posture(ceiling: Optional[GovernanceCeiling]) -> Optional[str]:
     if not isinstance(control, CapabilityGate) or not control.enabled:
         return None
     return stored
+
+
+def _apply_agentcore_gateway_url(
+    data: Mapping[str, object],
+    controls: Dict[str, object],
+    boot: "BootControls",
+) -> str:
+    """Validate and return the policy Gateway URL, or empty.
+
+    Missing / empty is legal (the crew may still name a posture and add
+    the URL later). A present but unusable value aborts when
+    ``boot.fail_closed``; otherwise it is ignored.
+    """
+    raw_caps = data.get("capabilities")
+    if not isinstance(raw_caps, dict):
+        return ""
+    raw = raw_caps.get("agentcore")
+    if not isinstance(raw, dict):
+        return ""
+    control = controls.get(_AGENTCORE_SCOPE)
+    if not isinstance(control, CapabilityGate) or not control.enabled:
+        return ""
+    value = raw.get("gateway_url")
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str):
+        reason = "capabilities.agentcore.gateway_url must be a string"
+        if boot.fail_closed:
+            raise PlatformCompositionError(reason)
+        return ""
+    from kiro_crew.platform.agentcore_aws import normalize_agentcore_gateway_url
+
+    try:
+        return normalize_agentcore_gateway_url(value)
+    except ValueError as exc:
+        if boot.fail_closed:
+            raise PlatformCompositionError(str(exc)) from exc
+        return ""
+
+
+def agentcore_gateway_url(ceiling: Optional[GovernanceCeiling]) -> str:
+    """Return the policy Gateway URL if ``capabilities.agentcore`` is enabled."""
+    if ceiling is None or agentcore_posture(ceiling) is None:
+        return ""
+    return str(ceiling.agentcore_gateway_url or "")
 
 
 def _parse_control(scope: str, spec: ScopeSpec, raw: object, *, is_policy: bool) -> object:
@@ -1837,6 +1893,7 @@ def parse_policy(
     )
     controls = _parse_controls(data, is_policy=True)
     composed_posture = _apply_agentcore_posture(data, controls, boot)
+    composed_gateway_url = _apply_agentcore_gateway_url(data, controls, boot)
     identity = data.get("identity") or {}
     issuer = str(identity.get("issuer", "")) if isinstance(identity, dict) else ""
     signature = str(identity.get("signature", "")) if isinstance(identity, dict) else ""
@@ -1880,6 +1937,7 @@ def parse_policy(
         updates=UpdatePins.from_dict(raw_updates or {}),
         fallback_profile=fallback_profile,
         agentcore_identity_posture=composed_posture,
+        agentcore_gateway_url=composed_gateway_url,
     )
 
 

@@ -507,6 +507,9 @@ companion. A launched box that opted into AgentCore actually vends.
   `KIROCREW_AGENTCORE_AWS=1`. `ensure_extra()` pips
   `kirocrew[agentcore]` on that path and on Settings PUT
   (not on GET; not uninstalled when posture returns to `none`)
+- Settings/policy `capabilities.agentcore.gateway_url` is the
+  this-crew Gateway MCP URL (https); runtime prefers that over
+  `KIROCREW_AGENTCORE_GATEWAY_URL`
 - IaC: `install.sh --agentcore`; CFN `AgentCoreGatewayUrl`; systemd
   `KIROCREW_AGENTCORE_GATEWAY_URL`
 - CLI: `kirocrew cloud launch --agentcore-gateway-url https://…`
