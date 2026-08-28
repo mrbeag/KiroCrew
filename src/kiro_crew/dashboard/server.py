@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import errno
 import faulthandler
 import logging
@@ -204,6 +205,12 @@ _DIST_DIR = _STATIC_DIR / "dist"
 # interval keeps the overhead negligible; a turn shorter than one interval never
 # outlasts a sleep timer, so not catching it is harmless.
 _PREVENT_SLEEP_POLL_INTERVAL_SECS = 15.0
+
+# How long the speech idle-sweep task waits before importing the recogniser package.
+# Its only job is to keep boot clean: the import pulls numpy and the binding, and the
+# hook that starts this task runs before either socket binds. Anything past the first
+# few seconds of boot works, since the sweep's own interval is a minute.
+_STT_SWEEP_BOOT_DELAY_SECS = 30.0
 
 
 async def _prune_browser_snapshots_loop() -> None:
@@ -3356,6 +3363,44 @@ async def start_dashboard(
 
     app.on_cleanup.append(_kas_login_shutdown)
 
+    async def _stt_startup(app_: web.Application) -> None:
+        # The idle sweep is what actually releases the model: the eviction check on
+        # the decode paths runs microseconds after the model was last used, so it can
+        # never observe the idle window elapsing.
+        async def _sweep() -> None:
+            # Slept BEFORE importing, and the import is inside the task rather than in
+            # the hook. This hook runs during `runner.setup()`, before either socket
+            # binds, so importing here would put numpy and the recogniser binding on
+            # the gateway's boot path -- delaying the moment the dashboard answers, for
+            # a janitor whose first useful pass is minutes away. There is nothing to
+            # evict until some caller has loaded a model anyway.
+            await asyncio.sleep(_STT_SWEEP_BOOT_DELAY_SECS)
+            from kiro_crew.stt import engine as stt_engine
+
+            await stt_engine.idle_sweep_loop()
+
+        task = asyncio.create_task(_sweep())
+        task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
+        app_["stt_idle_sweep"] = task  # prevent GC
+
+    app.on_startup.append(_stt_startup)
+
+    async def _stt_shutdown(app_: web.Application) -> None:
+        # Releases the resident speech model, which is 148MB at the default and
+        # 1.6GB at the largest. Imported here rather than at module scope so a
+        # gateway that never transcribes anything does not pull numpy and the
+        # recogniser binding just to register a cleanup hook.
+        from kiro_crew import stt
+
+        sweep = app_.get("stt_idle_sweep")
+        if sweep is not None:
+            sweep.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweep
+        await stt.close()
+
+    app.on_cleanup.append(_stt_shutdown)
+
     # ── Instances (multi-instance management) ────────────────────────────────
     # Register the opt-in instances startup/cleanup hooks HERE, before
     # ``runner.setup()`` freezes the app's signal lists. See
@@ -4048,6 +4093,44 @@ async def start_api_server(
             await service.close()
 
     app.on_cleanup.append(_kas_login_shutdown)
+
+    async def _stt_startup(app_: web.Application) -> None:
+        # The idle sweep is what actually releases the model: the eviction check on
+        # the decode paths runs microseconds after the model was last used, so it can
+        # never observe the idle window elapsing.
+        async def _sweep() -> None:
+            # Slept BEFORE importing, and the import is inside the task rather than in
+            # the hook. This hook runs during `runner.setup()`, before either socket
+            # binds, so importing here would put numpy and the recogniser binding on
+            # the gateway's boot path -- delaying the moment the dashboard answers, for
+            # a janitor whose first useful pass is minutes away. There is nothing to
+            # evict until some caller has loaded a model anyway.
+            await asyncio.sleep(_STT_SWEEP_BOOT_DELAY_SECS)
+            from kiro_crew.stt import engine as stt_engine
+
+            await stt_engine.idle_sweep_loop()
+
+        task = asyncio.create_task(_sweep())
+        task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
+        app_["stt_idle_sweep"] = task  # prevent GC
+
+    app.on_startup.append(_stt_startup)
+
+    async def _stt_shutdown(app_: web.Application) -> None:
+        # Releases the resident speech model, which is 148MB at the default and
+        # 1.6GB at the largest. Imported here rather than at module scope so a
+        # gateway that never transcribes anything does not pull numpy and the
+        # recogniser binding just to register a cleanup hook.
+        from kiro_crew import stt
+
+        sweep = app_.get("stt_idle_sweep")
+        if sweep is not None:
+            sweep.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweep
+        await stt.close()
+
+    app.on_cleanup.append(_stt_shutdown)
 
     # Prevent-sleep shutdown hook — registered before runner.setup freezes the
     # signal lists; the poll itself is armed after the port binds (below). This
