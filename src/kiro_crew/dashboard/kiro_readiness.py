@@ -215,6 +215,23 @@ def _service(request: web.Request) -> object:
     return service
 
 
+def _request_uses_kiro_identity_store(request: web.Request) -> bool:
+    """Classify a live slot before falling back to the configured harness."""
+    state = request.app.get("state")
+    sessions = getattr(state, "sessions", None)
+    classifier = getattr(sessions, "uses_kiro_identity_store", None)
+    if not callable(classifier):
+        return True
+    slot_name = request.match_info.get("slot")
+    if slot_name:
+        slot = getattr(state, "_slots", {}).get(slot_name)
+        if slot is not None:
+            from kiro_crew.dashboard.chat_utils import effective_session_key
+
+            return bool(classifier(effective_session_key(slot)))
+    return bool(classifier())
+
+
 async def reject_if_kiro_unverified(request: web.Request) -> web.Response | None:
     """Return 503 for the endpoints that must fail closed on a stale latch.
 
@@ -247,6 +264,9 @@ async def reject_if_kiro_unverified(request: web.Request) -> web.Response | None
     browser-opening spawn), and only these paths pay for the re-probe.
     """
 
+    if not _request_uses_kiro_identity_store(request):
+        _clear_refusal_warning()
+        return None
     if await kiro_verified_ready(_service(request)):
         _clear_refusal_warning()
         return None

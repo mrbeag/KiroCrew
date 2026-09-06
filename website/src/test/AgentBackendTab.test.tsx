@@ -51,15 +51,16 @@ beforeEach(() => {
   patchConfigMock.mockResolvedValue({})
   kirocrewConfigMock.mockClear()
   kirocrewConfigMock.mockResolvedValue({ agent: { acp_backend: '' } })
-  // The shipped core: kiro-cli + KAS selectable, Claude Code known but dormant.
-  schemaMock.mockReturnValue(schemaWith(['', 'kas']))
+  // The shipped core: Kiro CLI, Codex, and KAS selectable; Claude is dormant.
+  schemaMock.mockReturnValue(schemaWith(['', 'codex', 'kas']))
 })
 
 describe('AgentBackendTab', () => {
-  it('offers all three backends', async () => {
+  it('offers all four backends', async () => {
     wrap()
     expect(await screen.findByRole('button', { name: 'Kiro CLI' })).toBeInTheDocument()
     expect(button('Claude Code')).toBeInTheDocument()
+    expect(button('Codex CLI')).toBeInTheDocument()
     expect(button('KAS (kiro-agent)')).toBeInTheDocument()
   })
 
@@ -79,15 +80,18 @@ describe('AgentBackendTab', () => {
   })
 
   it('saves the picked backend to agent.acp_backend', async () => {
+    localStorage.setItem('kc.acp.models.v1', '{"ts":1,"models":[]}')
     wrap()
-    fireEvent.click(await screen.findByRole('button', { name: 'KAS (kiro-agent)' }))
-    await waitFor(() => expect(patchConfigMock).toHaveBeenCalledWith('agent.acp_backend', 'kas'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Codex CLI' }))
+    await waitFor(() => expect(patchConfigMock).toHaveBeenCalledWith('agent.acp_backend', 'codex'))
+    expect(localStorage.getItem('kc.acp.models.v1')).toBeNull()
   })
 
   it('disables a backend the build does not advertise, and says so', async () => {
     wrap()
     await waitFor(() => expect(button('Claude Code')).toBeDisabled())
     expect(button('Kiro CLI')).toBeEnabled()
+    expect(button('Codex CLI')).toBeEnabled()
     expect(button('KAS (kiro-agent)')).toBeEnabled()
     expect(screen.getByText('Not enabled in this build')).toBeInTheDocument()
   })
@@ -101,7 +105,7 @@ describe('AgentBackendTab', () => {
     wrap()
     await waitFor(() => expect(button('Kiro CLI')).toBeEnabled())
     expect(screen.getByText('Default. All features supported.')).toBeInTheDocument()
-    expect(screen.getByText('Experimental')).toBeInTheDocument()
+    expect(screen.getAllByText('Experimental')).toHaveLength(2)
     expect(screen.getByText('Not enabled in this build')).toBeInTheDocument()
     // No row carries prose beyond those three.
     expect(screen.queryByText(/OS sandbox|steered mid-turn|Anthropic/)).not.toBeInTheDocument()
@@ -139,11 +143,11 @@ describe('AgentBackendTab', () => {
   it('stops calling a backend unavailable once the schema advertises it', async () => {
     // Status is off the schema, not a per-agent literal: widening the enum flips
     // Claude Code's line from not-enabled to Experimental with no edit here.
-    schemaMock.mockReturnValue(schemaWith(['', 'claude', 'kas']))
+    schemaMock.mockReturnValue(schemaWith(['', 'claude', 'codex', 'kas']))
     wrap()
     await waitFor(() => expect(button('Claude Code')).toBeEnabled())
     expect(screen.queryByText('Not enabled in this build')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Experimental')).toHaveLength(2)
+    expect(screen.getAllByText('Experimental')).toHaveLength(3)
   })
 
   it('does not attempt to save an unavailable backend', async () => {
@@ -156,7 +160,7 @@ describe('AgentBackendTab', () => {
   it('enables a backend once the schema advertises it', async () => {
     // The internal-edition case. Nothing about this component changes — the
     // option lights up because the server widened the field.
-    schemaMock.mockReturnValue(schemaWith(['', 'claude', 'kas']))
+    schemaMock.mockReturnValue(schemaWith(['', 'claude', 'codex', 'kas']))
     wrap()
     await waitFor(() => expect(button('Claude Code')).toBeEnabled())
     expect(screen.queryByText('Not enabled in this build')).not.toBeInTheDocument()

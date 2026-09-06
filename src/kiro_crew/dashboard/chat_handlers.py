@@ -1428,6 +1428,39 @@ def _snapshot_slot_window(slot: "_ChatSlot") -> tuple[int, list[dict]]:
     return disk_older_count, window
 
 
+def _tail_has_foreign_row_after_window_match(disk_tail: list[dict], window: list[dict]) -> bool:
+    """Detect a modern foreign append inside the resident disk-window region.
+
+    Saved slot rows carry ``meta.mid``; rows appended directly through the
+    conversation log do not. An unmatched row after the first resident id has
+    matched is therefore not frozen-prefix history. The bounded newest-page
+    path falls back to the authoritative full read for this rare shape so its
+    absolute pagination cursor includes the foreign row exactly.
+
+    Legacy all-id-less transcripts deliberately return false: without stable
+    identity, a bounded tail cannot distinguish a frozen-prefix row from a
+    foreign append without parsing the whole corpus.
+    """
+    remaining: dict[str, int] = {}
+    for message in window:
+        meta = message.get("meta")
+        mid = meta.get("mid") if isinstance(meta, dict) else None
+        if isinstance(mid, str) and mid:
+            remaining[mid] = remaining.get(mid, 0) + 1
+    if not remaining:
+        return False
+    matched_window = False
+    for row in disk_tail:
+        meta = row.get("meta")
+        mid = meta.get("mid") if isinstance(meta, dict) else None
+        if isinstance(mid, str) and remaining.get(mid, 0) > 0:
+            remaining[mid] -= 1
+            matched_window = True
+        elif matched_window:
+            return True
+    return False
+
+
 def _append_unflushed_tail(
     slot: "_ChatSlot",
     all_msgs: list[dict],
@@ -1699,7 +1732,9 @@ async def api_chat_slot_detail(request: web.Request) -> web.Response:
     handler and surface as a 500.
 
     By default (no limit), reads the full chained history from disk across
-    gateway restarts. Pagination params are retained for backwards compatibility.
+    gateway restarts. A bounded newest-page request is served from the slot's
+    resident window; ``before`` reads chained history to resolve the older-page
+    cursor.
     """
     state: DashboardState = request.app["state"]
     name = request.match_info["slot"]
@@ -1850,9 +1885,103 @@ async def api_chat_slot_detail(request: web.Request) -> web.Response:
         # This branch returns the whole corpus, so there is no older page to ask
         # for. Sent anyway so the field is present on every response shape.
         next_before = 0
+    elif before_raw is None:
+        # The newest page is already resident in the slot's bounded in-memory
+        # window. Parsing and caching the entire chained JSONL corpus merely to
+        # return its last 200 rows causes tens (occasionally hundreds) of
+        # megabytes of disk I/O on a long Codex thread, a correspondingly large
+        # parsed cache entry, and a huge HTTP payload redaction pass every time
+        # the chat is opened or refreshed.
+        #
+        # Persisted rows never contain wire-only chunk/done roles, so
+        # ``_disk_older_count`` is already in displayed-message units. Collapse
+        # the live window before applying the limit so an in-flight stream still
+        # occupies one row, exactly as the older-page path below does.
+        disk_older_count, window_snapshot = _snapshot_slot_window(slot)
+        history_key = slot_history_key(slot)
+        conversation_log = state.conversation_log
+        # Reconcile against at most the restored-window size plus one response
+        # page. The in-memory window can grow to 10,000 rows during a long-lived
+        # gateway process; using its full length here would quietly turn this
+        # back into a multi-megabyte disk read before the next restart.
+        tail_limit = min(len(window_snapshot), 500) + limit
+        try:
+            disk_tail = (
+                await asyncio.to_thread(
+                    conversation_log.read_messages_chained_tail,
+                    history_key,
+                    tail_limit,
+                )
+                if conversation_log
+                else []
+            )
+        except Exception:
+            logger.warning("read_messages_chained_tail failed for %s", history_key, exc_info=True)
+            disk_tail = []
+        needs_authoritative_read = (
+            bool(disk_tail) and not window_snapshot
+        ) or _tail_has_foreign_row_after_window_match(disk_tail, window_snapshot)
+        if needs_authoritative_read:
+            # A foreign append changes the absolute index space. Likewise, a
+            # legacy disk-only slot has no restored window whose prefix count
+            # can anchor the absolute cursor. In either case the bounded tail
+            # can display rows but cannot report an exact total, so preserve
+            # the compatibility contract with an authoritative read.
+            if conversation_log is None:
+                all_msgs = []
+            else:
+                try:
+                    all_msgs = await asyncio.to_thread(
+                        conversation_log.read_messages_chained, history_key
+                    )
+                except Exception:
+                    logger.warning(
+                        "read_messages_chained failed for %s", history_key, exc_info=True
+                    )
+                    all_msgs = []
+            reconciled = await asyncio.to_thread(
+                _append_unflushed_tail,
+                slot,
+                all_msgs,
+                snapshot=(disk_older_count, window_snapshot),
+            )
+            messages_in_window = await asyncio.to_thread(_collapse_wire_rows, reconciled)
+            total = len(messages_in_window)
+            messages = messages_in_window[-limit:]
+            next_before = max(0, total - len(messages))
+            has_more = next_before > 0
+        else:
+            # The bounded tail has no absolute-prefix rows in this local index
+            # space. Matching against every row lets the existing reconciliation
+            # insert genuinely unflushed window rows and exclude resolved or
+            # transient presentation rows.
+            reconciled = await asyncio.to_thread(
+                _append_unflushed_tail,
+                slot,
+                disk_tail,
+                snapshot=(0, window_snapshot),
+            )
+            messages_in_window = await asyncio.to_thread(_collapse_wire_rows, reconciled)
+            # Keep the absolute cursor based on the slot's authoritative accounting,
+            # not the bounded tail length (which can include a piece of the frozen
+            # prefix). Running the same filter against an empty disk view selects
+            # exactly the displayable resident rows, including unflushed ones while
+            # excluding queued/done/resolved-permission scaffolding.
+            displayable_window = await asyncio.to_thread(
+                _append_unflushed_tail,
+                slot,
+                [],
+                snapshot=(0, window_snapshot),
+            )
+            collapsed_window = await asyncio.to_thread(_collapse_wire_rows, displayable_window)
+            total = disk_older_count + len(collapsed_window)
+            messages = messages_in_window[-limit:]
+            next_before = max(0, total - len(messages))
+            has_more = next_before > 0
     else:
-        # Legacy pagination path (retained for programmatic callers).
-        # Always reads from chained disk history; no in-memory offset math.
+        # Older-page compatibility path. ``before`` is an absolute message
+        # index, so it still reads chained disk history to resolve that cursor.
+        # Normal session entry never comes through this expensive branch.
         history_key = slot_history_key(slot)
         try:
             all_msgs = (

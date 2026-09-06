@@ -765,6 +765,24 @@ runtime that still ships the API keeps the mitigation. Without that guard the
 Linux pidfd branch raised `AttributeError` and `kirocrew gateway` died before
 binding its port, while every other subcommand kept working.
 
+### Linux gateway heap reclamation
+
+The event-loop heartbeat offers a self-gating maintenance object a tick every
+five seconds. At most once every ten minutes on Linux, it reads current RSS
+directly from procfs. When RSS is at least 1.5 GiB, it asks glibc
+`malloc_trim(0)` to return wholly-free heap pages to the OS and logs reductions
+of at least 16 MiB. The probe and allocator call run in a worker thread, after
+the dashboard socket has bound, so maintenance cannot delay readiness or block
+the event loop. Healthy gateways remain below the threshold and do no
+allocator-wide work.
+
+The heartbeat waits at most two seconds for a pass. A timed-out worker keeps the
+single in-flight slot until it exits, preventing repeated submissions or a
+watchdog-triggering wait when the executor is saturated. Missing `ctypes`,
+non-glibc libc, failed current-RSS probes, and rejected trim calls are
+best-effort no-ops: reclamation must never stop the liveness heartbeat or make
+the gateway unavailable. macOS and Windows are unchanged.
+
 ### Live-target bootstrap
 
 On the `gateway` command path only, immediately after `_JAILED_COMMANDS`

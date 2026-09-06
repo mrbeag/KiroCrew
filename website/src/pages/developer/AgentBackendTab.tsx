@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bot, Sparkles, Terminal } from 'lucide-react'
+import { Bot, Code2, Sparkles, Terminal } from 'lucide-react'
 
 import { api } from '../../api/client'
 import ErrorNotice from '../../components/ErrorNotice'
 import { SettingsCard, SettingsButtonGroup } from '../../components/settings'
 import { useConfigSchema } from '../../components/settingRef/useConfigSchema'
 import { i18nT } from '../../i18n/t'
+import { clearAcpModelCache } from '../../providers/adapters/acp'
 
 /** The config field the switch owns. Also the schema path the options are gated on. */
 const CONFIG_KEY = 'agent.acp_backend'
@@ -18,6 +19,7 @@ const CONFIG_KEY = 'agent.acp_backend'
  */
 const KIRO = ''
 const CLAUDE = 'claude'
+const CODEX = 'codex'
 const KAS = 'kas'
 
 /**
@@ -90,7 +92,9 @@ export function AgentBackendTab() {
     mutationFn: (value: string) => api.patchConfig(CONFIG_KEY, value),
     onSuccess: () => {
       setSaveError('')
-      qc.invalidateQueries({ queryKey: ['kirocrewConfig'] })
+      clearAcpModelCache()
+      void qc.invalidateQueries({ queryKey: ['kirocrewConfig'] })
+      void qc.resetQueries({ queryKey: ['available-models', 'acp'] })
     },
     // No optimistic write and no local mirror of the value: the button group reads
     // straight from the query, so a rejected PATCH needs no revert — the cache was
@@ -146,6 +150,7 @@ export function AgentBackendTab() {
   const NAME: Record<string, string> = {
     [KIRO]: i18nT('pages.developer.agentBackendTab.kiro_cli'),
     [CLAUDE]: i18nT('pages.developer.agentBackendTab.claude_code'),
+    [CODEX]: i18nT('pages.developer.agentBackendTab.codex_cli'),
     [KAS]: i18nT('pages.developer.agentBackendTab.kas_kiro_agent'),
   }
 
@@ -189,6 +194,13 @@ export function AgentBackendTab() {
               describedById: statusId(CLAUDE),
             },
             {
+              value: CODEX,
+              label: NAME[CODEX],
+              icon: <Code2 className="lucide-inline" />,
+              disabled: unavailable(CODEX),
+              describedById: statusId(CODEX),
+            },
+            {
               value: KAS,
               label: NAME[KAS],
               icon: <Bot size={14} />,
@@ -198,11 +210,11 @@ export function AgentBackendTab() {
           ]}
           onChange={v => patchMut.mutate(v)}
         />
-        {/* One line per agent, always all three — the reader is choosing BETWEEN
+        {/* One line per agent — the reader is choosing BETWEEN
             them, so showing only the selected one's status would hide the very
             comparison the control is for. */}
         <dl className="mt-2 space-y-1.5">
-          {[KIRO, CLAUDE, KAS].map(value => (
+          {[KIRO, CLAUDE, CODEX, KAS].map(value => (
             <div key={value} className="flex gap-2 text-[11px] leading-relaxed">
               <dt className={`shrink-0 font-semibold ${value === current ? 'text-text-strong' : 'text-muted'}`}>
                 {NAME[value]}

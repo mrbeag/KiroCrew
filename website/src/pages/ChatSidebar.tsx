@@ -55,6 +55,7 @@ import { resolveFolderAgent, resolveFolderProjectDir } from '../utils/folderAgen
 import FolderMoveSubmenu from '../components/FolderMoveSubmenu'
 import SessionMoveUndoBar, { MOVE_UNDO_MS, type MovedSession } from '../components/SessionMoveUndoBar'
 import SessionActionsMenu from '../components/SessionActionsMenu'
+import CodexSessionImportModal from '../components/CodexSessionImportModal'
 import { ChannelBrandIcon, hasChannelBrandIcon } from '../components/ChannelBrandIcon'
 import TagManagerList from '../components/TagManagerList'
 import { DndDraggable, DndDroppable, pointerWithinDeepest, closestEdge } from '../components/dnd'
@@ -2479,6 +2480,7 @@ function ChatSidebar({
   const [folderModal, setFolderModal] = useState<
     { mode: 'create'; parentId: string } | { mode: 'edit'; folderId: string } | null
   >(null)  // The rename menus are Radix (ContextMenu/DropdownMenu). On close, Radix's
+  const [codexImportOpen, setCodexImportOpen] = useState(false)
   // FocusScope restores focus to its trigger (the card) AFTER the input mounts.
   // That restore blurs the freshly-mounted input, firing its onBlur, which
   // cancels the edit before you can type — so the box flickers open and reverts.
@@ -5200,6 +5202,12 @@ function ChatSidebar({
                   </span>
                 </DropdownMenuItem>
                 )}
+                {mcCfg?.agent?.acp_backend === 'codex' && (
+                  <DropdownMenuItem onSelect={() => setCodexImportOpen(true)}>
+                    <MessagesSquare size={14} aria-hidden />
+                    {i18nT('components.codexSessionImport.menuLabel')}
+                  </DropdownMenuItem>
+                )}
                 {/* Ephemeral session types are grouped one level down: they are two
                  *  spellings of one choice (a session that leaves no lasting memory),
                  *  so listing both at the top level would double the session-type rows
@@ -6635,6 +6643,16 @@ function ChatSidebar({
           }}
         />
       )}
+      <CodexSessionImportModal
+        open={codexImportOpen}
+        onClose={() => setCodexImportOpen(false)}
+        onImported={slot => {
+          queryClient.invalidateQueries({ queryKey: ['chat-slots'] })
+          dispatch(switchSlot(slot.key))
+          onSelectSlot?.(slot.key)
+          focusComposer()
+        }}
+      />
     </div>
   )
 }

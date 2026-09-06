@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from aiohttp import web
 
-from kiro_crew.dashboard import chat, handlers, session_transfer
+from kiro_crew.dashboard import chat, codex_import, handlers, session_transfer
 from kiro_crew.dashboard.handlers.source_providers import (
     api_issue_source,
     api_pull_request_auto_merge,
@@ -47,6 +47,8 @@ def register(app: web.Application) -> None:
     app.router.add_post("/api/source/issue", api_issue_source)
     app.router.add_get("/api/chat/slots", chat.api_chat_slots)
     app.router.add_post("/api/chat/slots", chat.api_chat_slot_create)
+    app.router.add_get("/api/codex/threads", codex_import.api_codex_threads)
+    app.router.add_post("/api/codex/threads/import", codex_import.api_codex_thread_import)
     app.router.add_post("/api/chat/slots/cleanup", chat.api_chat_slots_cleanup)
     app.router.add_post("/api/chat/slots/model", chat.api_chat_slots_model)
     # Static segment BEFORE the {slot} routes below, matching the cleanup/model

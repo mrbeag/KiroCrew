@@ -12,6 +12,10 @@
     }
   },
   "app": {
+    "codex": "Codex",
+    "codex_usage": "Codex usage",
+    "codex_usage_checking": "Codex usage — checking",
+    "codex_usage_unavailable": "Codex usage unavailable",
     "bonus_credits": "Bonus credits",
     "builder_id": "Builder ID",
     "check_logs_for_details": "Check logs for details.",
@@ -1234,6 +1238,46 @@
     }
   },
   "components": {
+    "codexSessionImport": {
+      "alreadyContinued": "Already continued",
+      "alreadyContinuedHint": "This original thread is already connected to a Kiro Crew session.",
+      "continueOriginal": "Continue original",
+      "description": "Choose a Codex CLI session. Import as new creates a native fork with the same context and state; Continue original connects to the exact existing thread.",
+      "empty": "No matching Codex sessions found.",
+      "importCopy": "Import as new",
+      "importFailed": "Could not import the Codex session.",
+      "loadFailed": "Could not load Codex sessions.",
+      "loading": "Loading Codex sessions…",
+      "menuDescription": "Fork or continue an existing Codex CLI thread",
+      "menuLabel": "Import Codex session",
+      "refresh": "Refresh",
+      "resumeWarning": "Continuing the original shares one native thread with Codex CLI. Do not use that thread in both applications at the same time.",
+      "search": "Search Codex sessions",
+      "title": "Import Codex session"
+    },
+    "codexUsageModal": {
+      "checking": "Checking Codex usage…",
+      "codex_usage": "Codex usage",
+      "credits": "Credits",
+      "daily_window": "Daily window",
+      "day_window": "{{count}}-day window",
+      "hour_window": "{{count}}-hour window",
+      "limit": "Rate limit",
+      "minute_window": "{{count}}-minute window",
+      "no_additional_credits": "No additional credits",
+      "no_windows": "No rolling-window values were reported.",
+      "plan": "Plan",
+      "primary_window": "Primary window",
+      "remaining": "{{percent}} remaining",
+      "resets": "Resets {{when}}",
+      "secondary_window": "Secondary window",
+      "scope": "Subscription rate limits reported by the native Codex app-server. Values refresh every 30 seconds.",
+      "unavailable": "Codex usage is unavailable.",
+      "unlimited": "Unlimited",
+      "used": "{{percent}} used",
+      "week_window": "{{count}}-week window",
+      "weekly_window": "Weekly window"
+    },
     "crewWakeSection": {
       "active": "active",
       "pause_named": "Pause {{name}}",
@@ -3577,10 +3621,15 @@
       "no_checkout_found_env_example": "KIROCREW_DEVFLEET_REPO=/path/to/your/checkout",
       "no_checkout_found_action": "Set the environment variable below, or add dev_fleet.repo_path to config.json in your {{productName}} data directory (~/.kiro/crew by default) to make it stick, then restart the gateway."
     },
+    "developer": {
+      "agentBackendTab": {
+        "codex_cli": "Codex CLI"
+      }
+    },
     "developerPage": {
       "tabs": {
         "agentBackend": {
-          "description": "Which agent new sessions start — Kiro CLI, Claude Code, or KAS",
+          "description": "Which agent new sessions start — Kiro CLI, Claude Code, Codex CLI, or KAS",
           "label": "Agent Backend"
         },
         "archive": {
@@ -4807,6 +4856,20 @@
         "custom_patterns_hidden_by_filter": "Your custom patterns are hidden by the current filter.",
         "built_in_rules_enforced_note": "{{enabled}} of {{total}} built-in rules are currently enforced, after your opt-outs and any policy pins.",
         "custom_patterns_counted_separately": "Your custom patterns are counted separately in Denied Commands.",
+        "docker_access": "Docker registry credentials",
+        "docker_access_description": "Lets new Linux agent sessions sign in to private Docker registries, for example to pull private images.",
+        "docker_access_unavailable": "Could not load the Docker registry credential setting. It cannot be shown or changed.",
+        "docker_access_unsupported": "Docker registry credentials are available only to Linux sandbox sessions.",
+        "docker_access_retry": "Retry",
+        "docker_access_enabled_warning": "The agent can read and disclose these credentials. Turning this off affects new sessions only; restart current sessions to revoke their existing access.",
+        "docker_access_confirm_body": "This gives every new agent session read access to your Docker registry credentials. A malicious or prompt-injected agent could use or disclose them. Continue only if you accept that risk.",
+        "docker_access_duration": "Access duration",
+        "docker_access_six_hours": "Allow for 6 hours",
+        "docker_access_until_disabled": "Allow until turned off",
+        "docker_access_confirm_action": "Allow credential access",
+        "docker_access_confirm_ack": "I understand agents can read and disclose my Docker registry credentials.",
+        "docker_access_owner_only": "Only the dashboard owner can change Docker registry credential access.",
+        "docker_access_save_failed": "Could not save Docker registry credential access.",
         "state_allowed": "Allowed",
         "state_blocked": "Blocked",
         "rail_active": "Active now",

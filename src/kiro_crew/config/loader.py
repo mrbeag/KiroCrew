@@ -20,6 +20,7 @@ import re as _re
 import shutil
 import stat as _stat
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from dataclasses import dataclass, field
@@ -750,6 +751,39 @@ def computer_use_state_path() -> Path:
     turned on and it is not one the agent can reach.
     """
     return config_dir() / "computer_use.json"
+
+
+def docker_registry_access_state_path() -> Path:
+    """Return the operator-only Docker registry credential grant path.
+
+    This authorization is deliberately separate from ``config.json``. An
+    auto-approved agent can write ordinary config through ``kirocrew config
+    set``; letting that file carry the grant would allow a prompt-injected
+    session to enable access to the operator's Docker registry credentials for
+    its next process. The keystone leaf is protected by ``security.py`` and is
+    written only by the authenticated dashboard handler.
+    """
+
+    return config_dir() / "docker_registry_access.json"
+
+
+def docker_registry_access_enabled() -> bool:
+    """Return true only for an explicit, unexpired Docker credential grant."""
+
+    try:
+        state = json.loads(docker_registry_access_state_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(state, dict) or state.get("enabled") is not True:
+        return False
+    if state.get("permanent") is True:
+        return True
+    expires_at = state.get("expires_at")
+    return (
+        isinstance(expires_at, (int, float))
+        and not isinstance(expires_at, bool)
+        and expires_at > time.time()
+    )
 
 
 def oauth_endpoints_path() -> Path:
@@ -1675,8 +1709,9 @@ class AgentConfig:
         default="",
         metadata=_meta(
             "ACP Backend",
-            "Which ACP agent to drive: '' = kiro-cli (default), 'kas' = kiro-agent. "
-            "KAS runs chat but has no native subagent progress reporting yet.",
+            "Which agent harness to drive: '' = kiro-cli (default), 'codex' = "
+            "Codex CLI app-server, 'kas' = kiro-agent. KAS runs chat but has no "
+            "native subagent progress reporting yet.",
             # Deliberately NO ``enum``. A literal here was frozen at import and fed
             # two import-time structures (``JSON_SCHEMA`` and ``SCHEMA_REGISTRY``),
             # both strictly earlier than an edition registering a backend at boot.
@@ -8966,6 +9001,11 @@ class KiroCrewConfig:
                 agent=agent,
                 crew_agent=crew_agent,
                 sandbox_mode=sandbox,
+                # The grant is a protected keystone, not a config field. Read it
+                # when constructing each provider so a refreshed warm pool sees
+                # the latest owner decision without advertising an inert
+                # ``kirocrew config`` key that the agent could appear to set.
+                sandbox_expose_docker_config=docker_registry_access_enabled(),
                 session_key=session_key,
                 channel_id=channel_id,
                 extra_env=extra_env,
@@ -8987,22 +9027,19 @@ def build_provider_factory(cfg: "KiroCrewConfig") -> Callable:
 
     Routes through ``current_context().providers.create_factory(cfg)`` (the CPP
     ``ProviderRegistry`` extension point) instead of calling
-    ``cfg.create_provider_factory()`` directly, so an edition can supply an
-    alternate provider factory (e.g. re-registering an extra ACP backend through
-    the dormant ``ACP_BACKEND_*`` seam).  The ``Default`` ProviderRegistry returns
-    exactly ``cfg.create_provider_factory()``, so the public edition is
-    behaviorally identical to calling it directly.
+    ``cfg.create_provider_factory()`` directly, so the public registry can select
+    an adapted harness and an edition can supply an alternate factory. The
+    ``Default`` ProviderRegistry delegates to ``cfg.create_provider_factory()``
+    for the Kiro/ACP path and owns any public native-harness branches.
 
     Fail-closed: a :class:`PlatformCompositionError` (a non-standalone host that
     could not compose its companion) propagates.  Any other transient lookup
-    failure degrades to ``cfg.create_provider_factory()`` so an unbooted /
-    standalone call site never breaks — it just gets the public factory.
+    failure degrades to the ``DefaultProviderRegistry`` so an unbooted /
+    standalone call site never breaks — it still gets the public factory.
 
     The fallback is passed as ``fallback_factory`` (a lazy thunk), NOT eagerly:
-    ``cfg.create_provider_factory()`` is built ONLY on the degrade path, so the
-    standalone happy path builds the factory exactly once (the Default
-    ``ProviderRegistry`` already returns ``cfg.create_provider_factory()``, so an
-    eager fallback would build it a second time on every session/reload).  A
+    the public fallback is built ONLY on the degrade path, so the standalone
+    happy path builds the factory exactly once. A
     failure INSIDE ``cfg.create_provider_factory()`` itself is handled by
     ``safe_context_call`` (which guards the factory call) rather than escaping
     uncaught; with no eager ``fallback`` here there is no usable factory, so a
@@ -9011,10 +9048,15 @@ def build_provider_factory(cfg: "KiroCrewConfig") -> Callable:
     """
     from kiro_crew.platform.context import current_context, safe_context_call
 
+    def _public_fallback() -> Callable:
+        from kiro_crew.platform.defaults import DefaultProviderRegistry
+
+        return DefaultProviderRegistry().create_factory(cfg)
+
     return safe_context_call(
         lambda: current_context().providers.create_factory(cfg),
-        fallback_factory=lambda: cfg.create_provider_factory(),
-        log_message="providers.create_factory failed; using cfg.create_provider_factory()",
+        fallback_factory=_public_fallback,
+        log_message="providers.create_factory failed; using public provider registry",
     )
 
 

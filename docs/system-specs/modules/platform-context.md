@@ -33,7 +33,7 @@ interface, the public edition is complete standalone.
 | `contract_version` | carrier (int) | `CONTRACT_VERSION` | must match core |
 | `profile` | carrier (str) | `"standalone"` | `"enterprise"` |
 | `cfg` | carrier (`KiroCrewConfig`) | loaded config | same |
-| `providers` | adapter | `DefaultProviderRegistry` (Kiro-CLI-ACP only) | re-registers a companion-registered backend |
+| `providers` | adapter | `DefaultProviderRegistry` (Kiro default; public Codex adapter opt-in) | re-registers a companion backend |
 | `publish` | adapter | `DefaultPublishRegistry` (registers no provider → publish unavailable) | registers enterprise artifact/publish providers |
 | `agent_runtime` | adapter | `DefaultAgentRuntime` (`run_first_run_setup` wired; `managed_mcp_servers` **RESERVED**) | extra one-time first-run provisioning |
 | `agent_executable` | adapter | `DefaultAgentExecutableResolver` (identity) | resolves an edition-managed launcher to its direct executable before core sandboxing |
@@ -554,12 +554,12 @@ delegates to that same global. Wired sites:
   LLM-provider factory build sites (`cli_chat`, `cli_server`,
   `session.reload_provider_factory`, `slack/gateway`, `cli`, `cli_commands`) route
   through `current_context().providers.create_factory(cfg)` instead of
-  `cfg.create_provider_factory()` directly. The Default returns exactly
-  `cfg.create_provider_factory()` (identity), so the public edition is unchanged;
-  the companion selects its Bedrock-hosted backend only when opted in. The
-  fallback is passed as a lazy `fallback_factory` so the happy path builds the
-  factory exactly once (no eager double-build) and a failure inside the fallback
-  is still caught by the shim.
+  `cfg.create_provider_factory()` directly. The Default delegates its Kiro/ACP
+  branch exactly to that method and selects public native adapters only when
+  explicitly configured; the companion can select its own registered backend.
+  The fallback is a lazy public-registry factory so the happy path builds the
+  factory exactly once (no eager double-build) and native public adapters still
+  work before platform composition is available.
 - `dashboard/handlers/knowledge.py` — the `SyncScheduler` connector map merges
   `current_context().knowledge.extra_connectors(cfg)` after the built-ins
   (`local_folder`/`obsidian_vault`); Default returns `{}` so standalone is

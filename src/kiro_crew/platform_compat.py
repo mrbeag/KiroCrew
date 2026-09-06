@@ -4363,6 +4363,111 @@ def proc_rss_bytes() -> int:
     return 0 if counters is None else int(counters.WorkingSetSize)
 
 
+HEAP_TRIM_INTERVAL_SECONDS = 10 * 60.0
+HEAP_TRIM_RSS_THRESHOLD_BYTES = 1536 * 1024 * 1024
+HEAP_TRIM_LOG_THRESHOLD_BYTES = 16 * 1024 * 1024
+# Must remain below the heartbeat interval.  A queued or wedged default-executor
+# worker forfeits this maintenance pass instead of starving the liveness beat.
+HEAP_TRIM_TIMEOUT_SECONDS = 2.0
+
+
+def _malloc_trim() -> bool:
+    """Ask glibc to return wholly-free heap pages, or no-op elsewhere."""
+    try:
+        libc = ctypes.CDLL(None)
+        getattr(libc, "gnu_get_libc_version")
+        trim = libc.malloc_trim
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        return bool(trim(0))
+    except (AttributeError, OSError):
+        return False
+
+
+def trim_heap_if_needed(
+    *,
+    rss_reader: Callable[[], int | None] | None = None,
+    trimmer: Callable[[], bool] | None = None,
+) -> int:
+    """Return bytes released from a large Linux gateway heap.
+
+    A high threshold avoids allocator-wide work on healthy gateways. This must
+    use Linux's current RSS directly: :func:`proc_rss_bytes` deliberately falls
+    back to peak RSS when procfs is unavailable, which would turn one historic
+    spike into repeated trim attempts. Unsupported libc and probe failures are
+    harmless because reclamation is optional.
+    """
+    if not IS_LINUX:
+        return 0
+    try:
+        read_rss = rss_reader or _linux_current_rss_bytes
+        before = read_rss()
+        if before is None:
+            return 0
+        if before < HEAP_TRIM_RSS_THRESHOLD_BYTES:
+            return 0
+        if not (trimmer or _malloc_trim)():
+            return 0
+        after = read_rss()
+        if after is None:
+            return 0
+    except Exception:  # noqa: BLE001 - optional maintenance must not stop the heartbeat
+        return 0
+    return max(0, before - after)
+
+
+class HeapTrimMaintainer:
+    """Self-gate bounded, best-effort heap reclamation for the gateway.
+
+    The heartbeat calls :meth:`maybe_trim` on every tick. Cadence and in-flight
+    ownership live here so the heartbeat stays cadence-free. A timed-out worker
+    may continue running because Python cannot cancel native work already in a
+    thread; ``_inflight`` prevents another from being submitted until that
+    worker returns. If cancellation wins before the worker starts, maintenance
+    remains disabled for this object, which is the safe failure mode.
+    """
+
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        trim: Callable[[], int] = trim_heap_if_needed,
+    ) -> None:
+        self._clock = clock
+        self._trim = trim
+        self._next_trim = clock() + HEAP_TRIM_INTERVAL_SECONDS
+        self._inflight = False
+
+    async def maybe_trim(self) -> int:
+        """Return bytes released, or zero when skipped, timed out, or failed."""
+        try:
+            if not IS_LINUX:
+                return 0
+            now = self._clock()
+            if now < self._next_trim or self._inflight:
+                return 0
+            self._next_trim = now + HEAP_TRIM_INTERVAL_SECONDS
+            self._inflight = True
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(self._run_trim),
+                    timeout=HEAP_TRIM_TIMEOUT_SECONDS,
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.debug("gateway heap trim timed out; maintenance pass skipped")
+                return 0
+        except Exception:  # noqa: BLE001 - maintenance must not stop the heartbeat
+            logger.debug("gateway heap trim failed", exc_info=True)
+            return 0
+
+    def _run_trim(self) -> int:
+        """Worker-thread wrapper that releases the single in-flight slot."""
+        try:
+            return self._trim()
+        finally:
+            self._inflight = False
+
+
 def proc_peak_rss_bytes() -> int:
     """Return this process's PEAK resident set size in bytes, or 0 on failure.
 

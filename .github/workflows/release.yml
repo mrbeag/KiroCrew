@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    # Fork revisions are built locally and published to GitHub, not upstream's CDN.
+    tags: ["v*", "!v*-1.*"]
 
 # Prerelease tags build, sign, publish, and record one immutable promotion
 # bundle. A bare stable tag REBUILDS that same commit under the bare version, so

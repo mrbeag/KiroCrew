@@ -4241,10 +4241,40 @@ class ConversationLog:
         Uses a ``_tab_id_index`` cache (built lazily, invalidated on save)
         to avoid scanning every file on each call.
         """
+        keys = self._message_chain_keys(key)
+        if len(keys) == 1:
+            return self._read_messages(keys[0])
+        all_msgs: list[dict] = []
+        for k in keys:
+            all_msgs.extend(self._read_messages(k))
+        return all_msgs or self._read_messages(key)
+
+    def read_messages_chained_tail(self, key: str, max_messages: int) -> list[dict]:
+        """Read at most the newest *max_messages* rows across a tab-id chain.
+
+        Unlike :meth:`read_messages_chained`, this never populates the full
+        parsed-message cache. It walks sibling files newest-first and uses the
+        bounded seek-from-EOF reader for each one, stopping as soon as the
+        requested tail is complete.
+        """
+        if max_messages <= 0:
+            return []
+        messages: list[dict] = []
+        for sibling in reversed(self._message_chain_keys(key)):
+            remaining = max_messages - len(messages)
+            if remaining <= 0:
+                break
+            tail = self._read_tail_messages(self._path(sibling), remaining, None)
+            if tail:
+                messages[:0] = tail
+        return messages[-max_messages:]
+
+    def _message_chain_keys(self, key: str) -> list[str]:
+        """Return chronological transcript keys belonging to *key*'s tab id."""
         meta = self.get_metadata(key)
         tid = meta.get("tab_id")
         if not tid:
-            return self._read_messages(key)
+            return [key]
         # Guard the lazy build/read of the shared _tab_id_index: this method is
         # reachable from worker threads (chat_persistence restore/save) while the
         # event loop may mark the index stale via invalidate_tab_id_cache().
@@ -4262,12 +4292,7 @@ class ConversationLog:
                 self._rebuild_tab_id_index()
             index = self._tab_id_index or {}
             keys = list(index.get(tid, []))
-        if not keys:
-            return self._read_messages(key)
-        all_msgs: list[dict] = []
-        for k in keys:
-            all_msgs.extend(self._read_messages(k))
-        return all_msgs or self._read_messages(key)
+        return keys or [key]
 
     def _rebuild_tab_id_index(self) -> None:
         """Scan all dashboard session files and build tab_id → [keys] mapping.

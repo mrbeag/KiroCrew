@@ -226,7 +226,7 @@ def _rewrite_pid_file(path: Path, content: str) -> bool:
 # PIDs before a kill, and as a NEGATIVE gate in the work-orphan sweep: these
 # runtimes are reclaimed by their own tracked-PID sweep, never by the
 # marker-based work sweep (see _is_sweepable_orphan_work).
-_MANAGED_AGENT_MARKERS: tuple[str, ...] = ("kiro-cli", "claude")
+_MANAGED_AGENT_MARKERS: tuple[str, ...] = ("kiro-cli", "claude", "codex")
 
 
 def _is_managed_agent_process(pid: int) -> bool:

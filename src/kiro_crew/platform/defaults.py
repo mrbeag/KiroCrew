@@ -36,9 +36,17 @@ from kiro_crew.platform.interfaces import CapabilityResult, InterceptDecision, O
 
 
 class DefaultProviderRegistry:
-    """Kiro-CLI-ACP only.  Leaves the dormant ACP_BACKEND_CLAUDE seam untouched."""
+    """Select public harness adapters while keeping Kiro CLI as the default."""
 
     def create_factory(self, cfg: Any) -> Callable[..., Any]:
+        from kiro_crew.acp_backends import ACP_BACKEND_CODEX, ACP_BACKEND_KIRO
+
+        agent = getattr(cfg, "agent", None)
+        configured_backend = getattr(agent, "acp_backend", ACP_BACKEND_KIRO)
+        if configured_backend == ACP_BACKEND_CODEX:
+            from kiro_crew.providers.codex import create_codex_provider_factory
+
+            return create_codex_provider_factory(cfg)
         return cfg.create_provider_factory()
 
     def register_acp_backends(self) -> None:

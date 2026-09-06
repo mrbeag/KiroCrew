@@ -1306,7 +1306,25 @@ def _wrap_list_models_argv(argv: list[str]) -> tuple[list[str], str | None]:
 
 
 async def api_models(request: web.Request) -> web.Response:
-    """GET /api/models — list available models from the live kiro-cli ACP session."""
+    """GET /api/models — list models advertised by the selected harness."""
+    cfg = KiroCrewConfig.load()
+    from kiro_crew.acp.types import ACP_BACKEND_CODEX
+
+    if cfg.agent.acp_backend == ACP_BACKEND_CODEX:
+        try:
+            from kiro_crew.providers.codex import fetch_codex_models
+
+            return web.json_response(await fetch_codex_models(cfg))
+        except Exception:
+            logger.warning("api_models: Codex model/list failed", exc_info=True)
+            return web.json_response(
+                {
+                    "error": "Codex model list unavailable",
+                    "code": "codex_model_list_unavailable",
+                },
+                status=503,
+            )
+
     # Signed-out gateways must never reach the spawn below. kiro-cli auto-opens
     # an interactive browser login for ANY subcommand run unauthenticated
     # (--no-interactive does not suppress it, and there is no opt-out env var),

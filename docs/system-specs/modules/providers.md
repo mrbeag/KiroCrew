@@ -1,8 +1,9 @@
 ## LLM Provider Abstraction
 
-KiroCrew drives a single LLM backend: `kiro-cli` over ACP. The `LLMProvider`
-interface is retained as a thin seam (consumers depend only on the ABC), but
-there is exactly one concrete provider — `agent.provider` is fixed to `acp`.
+Kiro Crew keeps `kiro-cli` over ACP as its first-class default harness and also
+offers adapted harnesses behind the `LLMProvider` contract. `agent.provider`
+remains fixed to `acp`; `agent.acp_backend` selects the harness so every session
+continues through the same provider registry and lifecycle.
 
 ### Architecture
 
@@ -17,11 +18,14 @@ there is exactly one concrete provider — `agent.provider` is fixed to `acp`.
          │   providers/base   │
          └─────────┬─────────┘
                    │
-            ┌──────┴──────┐
-            │ AcpProvider │
-            │ acp.py      │
-            │ kiro-cli    │
-            └─────────────┘
+         ┌─────────┴──────────┐
+         │ ProviderRegistry   │
+         └──────┬────────┬────┘
+                │        │
+       ┌────────┴───┐ ┌──┴────────────┐
+       │ AcpProvider│ │ CodexProvider │
+       │ kiro / KAS │ │ app-server    │
+       └────────────┘ └───────────────┘
 ```
 
 **Note:** the removed Bedrock provider and the removed standalone provider were
@@ -29,8 +33,8 @@ there is exactly one concrete provider — `agent.provider` is fixed to `acp`.
 multi-provider dispatch factory. `acp/client.py` keeps a dormant
 `ACP_BACKEND_CLAUDE` seam (`AcpProvider` can in principle drive
 `claude-agent-acp`) so an internal companion can re-register a Claude backend,
-but the public provider factory never selects it — `kiro-cli` is the only
-backend.
+but the public provider factory never selects it. The public Codex adapter uses
+Codex's native app-server protocol and cannot fall through `AcpProvider`.
 See [`../features/claude-code-provider.md`](../features/claude-code-provider.md).
 
 ### LLMProvider ABC (`providers/base.py`)
@@ -73,14 +77,15 @@ Provider-agnostic event dataclass (aliased from `AcpEvent`):
 
 ### AcpProvider (`providers/acp.py`)
 
-The sole provider. Spawns a long-lived `kiro-cli acp --agent <name>` subprocess
-and speaks JSON-RPC 2.0 over stdio.
+The default provider. Spawns a long-lived `kiro-cli acp --agent <name>`
+subprocess and speaks JSON-RPC 2.0 over stdio. It also hosts the adapted KAS ACP
+backend.
 
 **Dormant backend seam:** `AcpProvider`/`AcpClient` retain an `acp_backend`
 parameter (`"" ` → kiro-cli; `"claude"` / `ACP_BACKEND_CLAUDE` → `claude-agent-acp`)
 so an internal companion can re-register a Claude backend over the same
-client. **The public provider factory only ever selects kiro-cli** — the claude
-branch is unreachable in this build. Its binary-resolution + config-isolation
+client. **The public ACP path selects kiro-cli or KAS** — the claude branch is
+unreachable in this build. Its binary-resolution + config-isolation
 details live in [`acp-client.md`](acp-client.md); do not re-add the registration
 glue or a provider selector (see the repo-root `CLAUDE.md`).
 
@@ -108,19 +113,51 @@ glue or a provider selector (see the repo-root `CLAUDE.md`).
 - **Resume guard:** `session/load` (resume) is only attempted when the prior session transcript exists on disk (`~/.kiro/sessions/cli/<sid>.json`). A stale persisted sid with no transcript falls back to `session/new`, preventing a fresh conversation from replaying old turns (which inflated base context).
 - **Working dir:** `AcpProvider.cwd` overrides the `LLMProvider` ABC default so `session_map` persists the real workspace path. AcpProvider's work_dir lives on the inner client (`_client._work_dir`), so the prior `getattr(provider, "_work_dir", "")` persisted `""` for all ACP sessions — `provider.cwd` fixes resume-cwd-override.
 
+### CodexProvider (`providers/codex/`)
+
+The optional Codex harness starts one authenticated `codex app-server --stdio`
+process per live Crew session. `CodexAppServerClient` owns JSONL transport and
+native thread lifecycle; `CodexProvider` translates thread items, deltas, usage,
+approval requests, steering, cancellation, and completion into `LLMEvent`.
+Native thread ids are persisted through the same session map and resumed with
+`thread/resume`.
+
+`model/list` supplies the dashboard catalog without creating an empty thread.
+The provider is deliberately excluded from the ACP warm pool because a Codex
+thread binds its CWD, environment, and native identity at creation; it has no
+safe ACP-style re-key operation. Crew-owned MCP shims are added as process-local
+`-c mcp_servers.*` overrides, while the user's Codex configuration, login,
+skills, and other MCP servers remain owned by Codex.
+
+Dashboard metadata is cached: model/list refreshes every five minutes, including
+when reusing a live client; account/rateLimits/read backs the remaining-quota
+popup. Temporary metadata clients create no thread and are shut down after use.
+Explicit models are not silently replaced when the catalog is stale.
+
+The chat menu supports native thread/fork (Import as new) and thread/resume
+(Continue original). Only the newest 500 turns are projected into Crew's UI;
+native context remains intact. Do not concurrently use a continued original in
+CLI and dashboard. Codex steering acknowledgements settle delivery without
+waiting for Kiro's ACP echo. The owner-only Docker grant is read at each
+conversational provider creation; metadata clients do not receive that grant.
+
 ### Config (`config/loader.py`)
 
 ```json
 {
   "agent": {
     "provider": "acp",
+    "acp_backend": "",
     "model": "auto"
   }
 }
 ```
 
-- `agent.provider` is fixed to `"acp"` (enum `["acp"]`); there is no provider to choose.
-- `create_provider_factory()` returns a `Callable` that creates the kiro-cli `AcpProvider`.
+- `agent.provider` is fixed to `"acp"` (enum `["acp"]`).
+- `agent.acp_backend` is `""` for Kiro (default), `"codex"` for Codex app-server,
+  or `"kas"` for KAS.
+- `build_provider_factory()` routes selection through `ProviderRegistry`; the
+  Kiro/ACP construction path remains `KiroCrewConfig.create_provider_factory()`.
 
 An agent spec's model is consumed by kiro-cli before Kiro Crew reaches
 `session/new`, so the live-session entitlement guard cannot diagnose a wrong
@@ -134,13 +171,13 @@ discoverable user- and project-scoped spec.
 
 ### MCP Server Registration
 
-MCP servers are passed directly in the `session/new` params. The two managed
-servers (`kirocrew-core`, `kirocrew-cron` — see `agent.py:_MANAGED_MCP_SERVERS`)
-are always present; user-configured servers from the agent config are merged in.
+ACP MCP servers are passed directly in `session/new`. Codex receives only the
+Crew-owned core, cron, and computer shims as process-local app-server config;
+Codex itself loads user-configured servers from `~/.codex/config.toml`.
 
 ### SessionManager (`session.py`)
 
-- Provider-agnostic via factory (one provider: kiro-cli `AcpProvider`)
+- Provider-agnostic via the registry-selected factory
 - Calls `repair_agent_configs()` on gateway startup and periodically
 - context_info() reports model/agent
 - Resume: calls `set_resume_session_id()` before `start()`
@@ -167,8 +204,10 @@ A transient 5xx that arrives *after* the turn already emitted output (the `_turn
 
 ### Installation
 
-KiroCrew drives `kiro-cli` over ACP — install it per its own docs, ensure it is
-on `PATH`, and run `kiro-cli login`. `kirocrew doctor` reports its status.
+The default remains `kiro-cli` over ACP: install it per its own docs, ensure it
+is on `PATH`, and run `kiro-cli login`. To opt into Codex, install and authenticate
+the Codex CLI, then select **Developer → Agent Backend → Codex CLI** (or set
+`agent.acp_backend` to `codex`) and restart the gateway.
 
 
 ## AcpProvider: shared-runtime startup

@@ -522,8 +522,11 @@ Known follow-up (#1429): the snapshot makes this module a second home for agent
 discovery beside `apps/registry`.
 
 ### `KiroCrewConfig.create_provider_factory() -> Callable`
-Returns a factory for LLMProvider instances. Resolves `"auto"` model
-before creating the provider.
+Returns the Kiro/ACP factory used by the default registry's ACP branch. Resolves
+the `"auto"` model before creating the provider. Consumers call
+`build_provider_factory(cfg)`, which routes through `ProviderRegistry` so an
+explicit native harness such as Codex is selected without branching this Kiro
+construction path.
 
 ### `KiroCrewConfig.to_dict() -> dict`
 Serializes config to the JSON structure used by `config.json`. Uses `_configured_port`

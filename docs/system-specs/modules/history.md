@@ -1,5 +1,11 @@
 # Conversation History Module
 
+The fork's chat client requests a newest page of 200 messages. The dashboard
+uses `read_messages_chained_tail` to seek from EOF across related transcripts,
+without warming the full-message cache. Older-page and foreign-append
+reconciliation retain the authoritative full-history path. Pagination does not
+truncate saved history or native harness state.
+
 ## Overview
 
 Persistent conversation history with provenance tracking and LLM-driven consolidation. Conversations survive session expiry and gateway restarts.

@@ -26,6 +26,7 @@ from kiro_crew.acp.types import (  # noqa: F401
     EVENT_TOOL_CALL,
     EVENT_TOOL_CALL_UPDATE,
     EVENT_TOOL_RESULT,
+    PROVIDER_LABEL_DEFAULT,
 )
 from kiro_crew.acp.types import AcpEvent as LLMEvent  # noqa: F401
 from kiro_crew.constants import COMPACT_WAIT_TIMEOUT_SECS
@@ -128,6 +129,29 @@ class LLMProvider(ABC):
         Each provider overrides to return its own session_id.
         """
         return ""
+
+    @property
+    def provider_label(self) -> str:
+        """Stable identity persisted beside a native session id.
+
+        The safe default is the Kiro ACP label. Adapted providers override it
+        with a closed label from :mod:`kiro_crew.acp.types` (H11/H14).
+        """
+        return PROVIDER_LABEL_DEFAULT
+
+    @property
+    def supports_native_resume(self) -> bool:
+        """Whether ``session_id`` can be resumed by this provider."""
+        return False
+
+    def set_resume_session_id(self, session_id: str | None) -> None:
+        """Arm a native resume before :meth:`start`. No-op by default."""
+        return None
+
+    @property
+    def resumed(self) -> bool:
+        """Whether the most recent start restored native history."""
+        return False
 
     async def cleanup_session(self, session_id: str) -> None:
         """Delete on-disk session files for the given session ID.
@@ -261,6 +285,16 @@ class LLMProvider(ABC):
     def is_session_sharing_eligible(self) -> bool:
         """True when the provider can host multiplexed sub-agent sessions on one
         process. Default False — session sharing is opt-in, never inherited."""
+        return False
+
+    @property
+    def is_warm_pool_eligible(self) -> bool:
+        """Whether a provider may be started before its session identity exists.
+
+        Default False: an adapted harness must explicitly demonstrate that its
+        process, working directory, environment, and native conversation can be
+        safely rebound when claimed.
+        """
         return False
 
     @property

@@ -1272,30 +1272,45 @@ class TestSlotDetailPagination:
             assert data["has_more"] is True
 
     @pytest.mark.asyncio
-    async def test_cursor_branch_reads_disk_off_the_loop_thread(self, tmp_path, monkeypatch):
-        """The read must not run on the loop thread that serves every other request.
-
-        Asserts only that the call executed on a different thread. It does not
-        measure loop latency, so it cannot prove the loop was never blocked for
-        some other reason — but it does fail if the ``to_thread`` hop is removed.
-        """
+    async def test_newest_page_does_not_read_the_full_disk_history(self, tmp_path, monkeypatch):
+        """Opening a chat must use its bounded resident window, not parse all JSONL."""
         state = await self._slot_with_history(tmp_path, monkeypatch, "offloop")
         log = state.conversation_log
-        real = log.read_messages_chained
-        seen: list[int] = []
-
-        def recording(key):
-            seen.append(threading.get_ident())
-            return real(key)
-
-        monkeypatch.setattr(log, "read_messages_chained", recording)
-        loop_thread = threading.get_ident()
+        monkeypatch.setattr(
+            log,
+            "read_messages_chained",
+            lambda _key: (_ for _ in ()).throw(AssertionError("full history was read")),
+        )
 
         async with TestClient(TestServer(_make_app(state))) as client:
             resp = await client.get("/api/chat/slots/offloop?limit=5")
             assert resp.status == 200
-        assert seen, "read_messages_chained was never called"
-        assert loop_thread not in seen
+            body = await resp.json()
+        assert [m["content"] for m in body["messages"]] == [f"msg {i}" for i in range(5, 10)]
+
+    @pytest.mark.asyncio
+    async def test_newest_page_bounds_the_tail_read_when_the_live_window_is_large(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        slot = state.get_or_create_slot("large-window")
+        for i in range(1_200):
+            slot.append("user", f"msg {i}")
+        slot.drain()
+        requested: list[int] = []
+
+        def bounded_tail(_key, max_messages):
+            requested.append(max_messages)
+            return []
+
+        monkeypatch.setattr(state.conversation_log, "read_messages_chained_tail", bounded_tail)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            body = await (await client.get("/api/chat/slots/large-window?limit=200")).json()
+
+        assert requested == [700]
+        assert len(body["messages"]) == 200
+        assert body["messages"][0]["content"] == "msg 1000"
 
     @pytest.mark.asyncio
     async def test_unlimited_branch_returns_whole_history_off_the_loop_thread(
@@ -2124,6 +2139,8 @@ class TestSlotDetailPagination:
             f"a foreign row that merely redacts alike consumed the un-flushed row; "
             f"got {contents}"
         )
+        assert data["total"] == 3
+        assert data["next_before"] == 0
 
     @pytest.mark.asyncio
     async def test_bounded_read_runs_the_tail_match_off_the_event_loop(self, tmp_path, monkeypatch):

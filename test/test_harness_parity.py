@@ -28,8 +28,10 @@ from kiro_crew.acp import client as acp_client
 from kiro_crew.acp import runtime as acp_runtime
 from kiro_crew.acp.types import (
     ACP_BACKEND_CLAUDE,
+    ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKENDS_ACP_ADAPTER,
     ACP_BACKENDS_ACP_RUNTIME,
     ACP_BACKENDS_INTERNAL_SANDBOX,
     ACP_BACKENDS_KNOWN,
@@ -38,6 +40,7 @@ from kiro_crew.acp.types import (
     ACP_CLIENT_CAPABILITIES,
     KAS_CLIENT_CAPABILITIES,
     PROVIDER_LABEL_CLAUDE,
+    PROVIDER_LABEL_CODEX,
     PROVIDER_LABEL_DEFAULT,
     PROVIDER_LABEL_KAS,
 )
@@ -101,7 +104,7 @@ def test_provider_enum_is_acp_only() -> None:
     assert _field_default("provider") == "acp"
 
 
-@pytest.mark.parametrize("persisted", ["", "kas", "byo-harness", "claude", None, 7])
+@pytest.mark.parametrize("persisted", ["", "codex", "kas", "byo-harness", "claude", None, 7])
 def test_unselectable_backend_degrades_to_kiro(persisted: object) -> None:
     """H3: an unusable persisted value degrades to Kiro and never raises.
 
@@ -297,6 +300,7 @@ def test_capability_sets_are_subsets_of_known_backends() -> None:
         # refuses an unknown id, so this is the belt to that braces — a member
         # arriving some other way still has to be a backend the code recognizes.
         ("selectable_backends()", selectable_backends()),
+        ("ACP_BACKENDS_ACP_ADAPTER", ACP_BACKENDS_ACP_ADAPTER),
         ("ACP_BACKENDS_SESSION_SHARING", ACP_BACKENDS_SESSION_SHARING),
         ("ACP_BACKENDS_STEER", ACP_BACKENDS_STEER),
         ("ACP_BACKENDS_INTERNAL_SANDBOX", ACP_BACKENDS_INTERNAL_SANDBOX),
@@ -314,6 +318,14 @@ def test_unknown_backend_rejected_at_construction() -> None:
     """
     with pytest.raises(ValueError, match="acp_backend"):
         providers_acp.AcpProvider(acp_backend="byo-harness")
+
+
+def test_native_harness_rejected_by_acp_adapter() -> None:
+    """H8: a known native harness cannot fall through ACP to kiro-cli."""
+    assert ACP_BACKEND_CODEX in ACP_BACKENDS_KNOWN
+    assert ACP_BACKEND_CODEX not in ACP_BACKENDS_ACP_ADAPTER
+    with pytest.raises(ValueError, match="acp_backend"):
+        providers_acp.AcpProvider(acp_backend=ACP_BACKEND_CODEX)
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +374,7 @@ def test_every_known_backend_has_a_label() -> None:
     labels = {
         ACP_BACKEND_KIRO: PROVIDER_LABEL_DEFAULT,
         ACP_BACKEND_CLAUDE: PROVIDER_LABEL_CLAUDE,
+        ACP_BACKEND_CODEX: PROVIDER_LABEL_CODEX,
         ACP_BACKEND_KAS: PROVIDER_LABEL_KAS,
     }
     assert set(labels) == set(ACP_BACKENDS_KNOWN), (

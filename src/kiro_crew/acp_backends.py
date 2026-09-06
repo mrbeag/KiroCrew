@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 # them from there; this module is only where they are DEFINED.
 
 ACP_BACKEND_CLAUDE = "claude"
+ACP_BACKEND_CODEX = "codex"
 ACP_BACKEND_KAS = "kas"
 # The kiro-cli backend is spelled as the empty string throughout, so name it
 # rather than leaving every call site to infer it from "not claude".
@@ -50,6 +51,7 @@ ACP_BACKENDS_KNOWN: FrozenSet[str] = frozenset(
     {
         ACP_BACKEND_KIRO,
         ACP_BACKEND_CLAUDE,
+        ACP_BACKEND_CODEX,
         ACP_BACKEND_KAS,
     }
 )
@@ -58,8 +60,11 @@ ACP_BACKENDS_KNOWN: FrozenSet[str] = frozenset(
 
 #: What the public edition ships. ``ACP_BACKEND_CLAUDE`` is deliberately absent:
 #: it is a dormant seam reached by its own provider, not something a public build
-#: can serve a session with.
-BASELINE_SELECTABLE_BACKENDS: FrozenSet[str] = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS})
+#: can serve a session with. Codex is a public native adapter selected through
+#: ``DefaultProviderRegistry`` rather than the ACP transport.
+BASELINE_SELECTABLE_BACKENDS: FrozenSet[str] = frozenset(
+    {ACP_BACKEND_KIRO, ACP_BACKEND_CODEX, ACP_BACKEND_KAS}
+)
 
 _selectable: Set[str] = set(BASELINE_SELECTABLE_BACKENDS)
 

@@ -11,6 +11,8 @@ refuses mid-flight.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import asyncio
 import dataclasses
 import re
@@ -311,6 +313,21 @@ async def test_a_consumed_steer_is_not_discarded_when_the_rpc_raises(tmp_path):
     assert outcome == cd.STEER_STEERED
     # Delivered, so exactly one row — the same persisting tail as a clean steer.
     assert len([m for m in slot.messages if m.get("content") == "do the thing"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_native_steer_ack_settles_once_without_acp_echo(tmp_path):
+    state = _make_state(tmp_path)
+    slot = _busy(_slot(state, "chat-native"))
+    slot._acp_client = SimpleNamespace(
+        supports_steer=True,
+        steer_response_confirms_consumed=True,
+        steer=AsyncMock(return_value=True),
+    )
+    assert await cd.steer_into_running_turn(state, slot, "rebase please") == cd.STEER_STEERED
+    assert not slot._pending_steers
+    assert not slot._queue
+    assert len([m for m in slot.messages if m.get("content") == "rebase please"]) == 1
 
 
 @pytest.mark.asyncio

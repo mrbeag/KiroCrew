@@ -101,6 +101,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_CLAUDE,
     ACP_BACKEND_KIRO,
     ACP_BACKENDS_ACP_RUNTIME,
+    ACP_BACKENDS_KIRO_IDENTITY_STORE,
     PROVIDER_LABEL_CLAUDE,
     PROVIDER_LABEL_DEFAULT,
 )
@@ -966,6 +967,19 @@ class SessionManager:
         """Return the LLM provider for *key*, or ``None``."""
         sess = self._sessions.get(self._fold_key(key))
         return sess.provider if sess else None
+
+    def uses_kiro_identity_store(self, key: str | None = None) -> bool:
+        """Whether *key*, or the configured harness for a new key, uses Kiro auth.
+
+        A live session wins because backend changes apply only to new sessions.
+        The fallback is positive membership, so an adapted harness never inherits
+        Kiro's browser-opening readiness probes merely by being unknown here.
+        """
+        if key:
+            provider = self.get_provider(key)
+            if provider is not None:
+                return provider.uses_kiro_identity_store
+        return self._cfg.agent.acp_backend in ACP_BACKENDS_KIRO_IDENTITY_STORE
 
     async def try_acquire(self, key: str) -> bool:
         """Atomically take *key*'s turn semaphore iff a session exists and is idle.
@@ -2178,6 +2192,12 @@ class SessionManager:
                         agent=self._pool_agent or None,
                         cwd=self._pool_cwd or None,
                     )
+                    if not p.is_warm_pool_eligible:
+                        logger.info(
+                            "Warm pool: provider %s is not eligible; using cold starts",
+                            p.provider_label,
+                        )
+                        return
                     async with self._start_sem:
                         await p.start()
                     self._warm_pool.put_nowait((p, time.monotonic()))
@@ -3362,6 +3382,11 @@ class SessionManager:
                 elif ClaudeCodeProvider is not None and isinstance(provider, ClaudeCodeProvider):
                     provider.set_resume_session_id(resume_sid)
                     logger.info("CC resume for %s (sid=%s)", key, resume_sid)
+                elif provider.supports_native_resume is True:
+                    provider.set_resume_session_id(resume_sid)
+                    logger.info(
+                        "%s resume for %s (sid=%s)", provider.provider_label, key, resume_sid
+                    )
             async with self._start_sem:
                 try:
                     await provider.start()
@@ -3401,6 +3426,8 @@ class SessionManager:
 
             if isinstance(provider, AcpProvider):
                 resumed = provider.client.resumed
+            elif provider.supports_native_resume is True:
+                resumed = provider.resumed
 
             # A SPECULATIVE RESUME whose load did NOT restore the transcript
             # (F2 fell back to a fresh session, the mapping vanished between
@@ -3528,6 +3555,15 @@ class SessionManager:
                         sid = provider.session_id
                         if sid:
                             self._session_map.set(key, sid, provider="claude_code", cwd=_cwd_str)
+                    elif not is_stateless and provider.supports_native_resume is True:
+                        sid = provider.session_id
+                        if sid:
+                            self._session_map.set(
+                                key,
+                                sid,
+                                provider=provider.provider_label,
+                                cwd=_cwd_str,
+                            )
 
                     if self._cleanup_task is None or self._cleanup_task.done():
                         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
@@ -5130,6 +5166,22 @@ class SessionManager:
                         )
                     ):
                         self._session_map.set(key, sid, provider="claude_code", cwd=_cwd_str)
+                elif sess.provider.supports_native_resume is True:
+                    sid = sess.provider.session_id
+                    if (
+                        sid
+                        and key != BACKGROUND_KEY
+                        and (
+                            not any(key.startswith(p) for p in _STATELESS_PREFIXES)
+                            or self._is_continuable_key(key)
+                        )
+                    ):
+                        self._session_map.set(
+                            key,
+                            sid,
+                            provider=sess.provider.provider_label,
+                            cwd=_cwd_str,
+                        )
 
             # The set() calls above run on the loop and therefore DEFER their
             # disk write; the gateway exits via os._exit, which never cancels

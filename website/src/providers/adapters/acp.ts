@@ -108,6 +108,23 @@ function writeCachedModels(models: ModelInfo[]): void {
   }
 }
 
+/** Drop model state when the configured harness changes.
+ *
+ * The dashboard provider id remains `acp` for every agent backend, so React
+ * Query and localStorage cannot infer that a Kiro model catalog is invalid once
+ * the operator selects Codex (or vice versa). The backend switch calls this
+ * seam before refetching `/api/models` so a failed first fetch degrades to Auto
+ * rather than exposing model ids from the previous harness.
+ */
+export function clearAcpModelCache(): void {
+  for (const name of Object.keys(LIVE_WINDOWS)) delete LIVE_WINDOWS[name]
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(MODELS_CACHE_KEY)
+  } catch {
+    /* storage disabled — the in-memory cache was still cleared */
+  }
+}
+
 /** Raw daily-usage entry from /api/usage/kiro. */
 interface RawDailyHistory {
   date: string

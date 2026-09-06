@@ -3,7 +3,7 @@
 
 Kiro Crew drives one first-class agent harness, ``kiro-cli``
 (``ACP_BACKEND_KIRO``, spelled ``""``), plus adapted ones: the dormant
-``ACP_BACKEND_CLAUDE`` seam, KAS, and whatever a bring-your-own adapter
+``ACP_BACKEND_CLAUDE`` seam, Codex, KAS, and whatever a bring-your-own adapter
 registers next. An added harness may only adapt itself to the seams the Kiro
 harness already runs through; it may not move, widen, or generalize them.
 
@@ -66,8 +66,7 @@ SCAN_ROOTS = ("src/kiro_crew/",)
 SCAN_SUFFIX = ".py"
 
 # This gate and its test spell every forbidden form out literally, and the
-# vocabulary module (VOCABULARY_PATH below) is the vocabulary's home rather than a
-# consumer of it.
+# vocabulary modules below are the vocabulary's homes rather than consumers of it.
 SKIP_PATHS = frozenset(
     {
         "scripts/check_harness_parity.py",
@@ -75,7 +74,7 @@ SKIP_PATHS = frozenset(
     }
 )
 
-# The one module allowed to DEFINE harness identifiers and membership sets.
+# The modules allowed to DEFINE harness identifiers and capability sets.
 #
 # Moved out of ``acp/types.py`` deliberately: importing anything under
 # ``kiro_crew.acp`` executes that package's ``__init__`` (client + runtime), so the
@@ -83,17 +82,17 @@ SKIP_PATHS = frozenset(
 # literal copy of the selectable list instead — the drift this rule exists to
 # prevent, reached by obeying it. ``acp_backends`` imports nothing from
 # ``kiro_crew.acp``, so every consumer can name the constants instead of copying
-# them. The invariant is unchanged: exactly ONE module defines them, and
-# ``acp/types.py`` now re-exports from here (an import, not an assignment, so it
-# does not match this rule).
-VOCABULARY_PATH = "src/kiro_crew/acp_backends.py"
+# them. The invariant is unchanged: exactly ONE leaf module defines identifiers,
+# while capability membership remains beside the ACP types that consume it.
+IDENTIFIER_VOCABULARY_PATH = "src/kiro_crew/acp_backends.py"
+CAPABILITY_VOCABULARY_PATH = "src/kiro_crew/acp/types.py"
 
 SUPPRESSION = re.compile(r"harness-ok")
 
 # Harness identifiers as string literals. A bare literal is forbidden even where
 # the comparison is positive, because the value of ACP_BACKEND_KIRO is the empty
 # string and only the named constant makes that legible.
-_HARNESS_LITERAL = r"(?:kiro|claude|kas|claude_code|kiro-cli)"
+_HARNESS_LITERAL = r"(?:kiro|claude|codex|kas|claude_code|kiro-cli)"
 
 
 @dataclass(frozen=True)
@@ -156,13 +155,22 @@ RULES: tuple[Rule, ...] = (
         fix="`is_kiro_cli=<backend> in ACP_BACKENDS_INTERNAL_SANDBOX`",
     ),
     Rule(
-        rule_id="vocabulary-home",
+        rule_id="identifier-home",
         invariant="H8",
-        pattern=re.compile(r"^\s*ACP_BACKEND(?:S)?_[A-Z_]+\s*(?::[^=]+)?=\s*\S"),
-        message="harness identifier or membership set defined outside the " "vocabulary module",
-        fix=f"define it in {VOCABULARY_PATH} and add every new identifier to "
+        pattern=re.compile(r"^\s*ACP_BACKEND_[A-Z_]+\s*(?::[^=]+)?=\s*\S"),
+        message="harness identifier defined outside the identifier vocabulary module",
+        fix=f"define it in {IDENTIFIER_VOCABULARY_PATH} and add every new identifier to "
         "ACP_BACKENDS_KNOWN, or provider construction will not reject a typo",
-        exempt=frozenset({VOCABULARY_PATH}),
+        exempt=frozenset({IDENTIFIER_VOCABULARY_PATH}),
+    ),
+    Rule(
+        rule_id="capability-home",
+        invariant="H8",
+        pattern=re.compile(r"^\s*ACP_BACKENDS_[A-Z_]+\s*(?::[^=]+)?=\s*\S"),
+        message="harness capability set defined outside the capability vocabulary module",
+        fix=f"define it in {CAPABILITY_VOCABULARY_PATH} and keep it a subset of "
+        "ACP_BACKENDS_KNOWN",
+        exempt=frozenset({CAPABILITY_VOCABULARY_PATH}),
     ),
     Rule(
         rule_id="non-kiro-default",
@@ -421,13 +429,13 @@ PROBES: tuple[tuple[str, str, str, str | None], ...] = (
         "vocabulary-elsewhere",
         "src/kiro_crew/providers/acp.py",
         'ACP_BACKEND_BYO = "byo"',
-        "vocabulary-home",
+        "identifier-home",
     ),
     (
         "membership-set-elsewhere",
         "src/kiro_crew/subagent.py",
         "ACP_BACKENDS_FAST = frozenset({ACP_BACKEND_KIRO})",
-        "vocabulary-home",
+        "capability-home",
     ),
     (
         "non-kiro-default",
@@ -474,8 +482,14 @@ PROBES: tuple[tuple[str, str, str, str | None], ...] = (
     ),
     (
         "vocabulary-at-home",
-        VOCABULARY_PATH,
+        IDENTIFIER_VOCABULARY_PATH,
         'ACP_BACKEND_BYO = "byo"',
+        None,
+    ),
+    (
+        "capability-at-home",
+        CAPABILITY_VOCABULARY_PATH,
+        "ACP_BACKENDS_FAST = frozenset({ACP_BACKEND_KIRO})",
         None,
     ),
     (

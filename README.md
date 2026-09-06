@@ -44,13 +44,33 @@
   <a href="#docs-and-contributing">Docs</a>
 </p>
 
+## Versioning
+
+This fork tracks [kirodotdev/KiroCrew](https://github.com/kirodotdev/KiroCrew),
+currently based on **v0.5.0**, and layers its own changes on top. Releases use
+`{upstream}-1.{n}`: `0.5.0-1.0` means upstream 0.5.0 plus fork revision 1.0;
+the fork revision increments for fixes and resets on the next upstream rebase.
+The current release is **v0.5.0-1.0**. See [CHANGELOG.md](CHANGELOG.md).
+
+Download this fork's Linux Debian package from
+[mrbeag/KiroCrew releases](https://github.com/mrbeag/KiroCrew/releases/tag/v0.5.0-1.0).
+It includes the optional native Codex harness, session import, remaining-usage
+display and Docker credential access controls. Kiro remains the default harness.
+Fork desktop updates are manual so the upstream updater cannot replace these
+changes. Python package metadata spells this version `0.5.0+fork.1.0` to comply
+with Python's version format; the app and release tag use `0.5.0-1.0`.
+
+The download links and one-line installers below are **upstream distributions**;
+they do not include this fork's additions.
+
 ## Quick start
 
 You choose how to run Kiro Crew: the desktop app with automatic updates, a
 one-line install on your machine or a remote host, the Docker image for
-always-on servers, or a build from source. Every path runs on `kiro-cli`
-underneath, so the first launch installs it if needed and guides Kiro
-device-code sign-in.
+always-on servers, or a build from source. Kiro CLI remains the default harness,
+so the first launch installs it if needed and guides Kiro device-code sign-in.
+An existing authenticated Codex CLI can instead be selected later under
+**Developer → Agent Backend**.
 
 ### App downloads
 
@@ -270,7 +290,7 @@ The complete inventory is in [Features](src/kiro_crew/docs/index.md) and
 flowchart TD
     S["Desktop app · Web dashboard · CLI · Messaging channels (Slack, Discord, Telegram, Teams, Webex, WeCom, WeChat)"]
     G["Gateway<br/>access · sessions · memory · schedules · approvals · apps"]
-    A["Agent sessions<br/>ACP runtime · kiro-cli · MCP tools · models"]
+    A["Agent sessions<br/>Kiro ACP or Codex app-server · MCP tools · models"]
     S --> G --> A
 ```
 
@@ -281,18 +301,19 @@ messaging channel, the Gateway routes your work to managed agent sessions under
 the same memory, tool, approval, and policy services. Apps extend the dashboard and
 Gateway APIs with focused workflows.
 
-Each active conversation or background task uses an agent session. Its session
-provider drives `kiro-cli` over ACP, streams model and tool events, and preserves
-conversation state. Depending on the workload, a session is backed by its own
-ACP process or by a session handle on a shared multiplexed ACP runtime. The
+Each active conversation or background task uses an agent session. Its provider
+drives the selected harness, streams model and tool events, and preserves
+conversation state. Kiro sessions use a dedicated ACP process or a handle on a
+shared multiplexed runtime; optional Codex sessions use a native app-server
+process and thread. The
 Gateway manages these sessions along with scheduling, approvals, memory,
 security policy, messaging connections, and the dashboard.
 
 The current runtime places the Gateway, agent sessions, ACP processes, and state
 on the same host. Run Kiro Crew on your Mac, inside a container on your machine,
 or on a remote Linux host you control. Conversation history, memory, and
-knowledge indexes remain on that host. Model requests are handled by `kiro-cli`
-and follow the account and model configuration you use there.
+knowledge indexes remain on that host. Model requests are handled by the selected
+CLI and follow the account and model configuration you use there.
 
 **Gateway.** The Gateway is the long-running Kiro Crew process. It routes
 messages from the desktop app, web, CLI, and the messaging surfaces listed below. It persists
@@ -490,10 +511,19 @@ main configuration with `kirocrew config get`, `set`, and `edit`.
 }
 ```
 
-`agent.provider` is fixed to `acp`. Kiro Crew drives `kiro-cli` over the Agent
-Client Protocol. Set the dashboard port with `KIROCREW_PORT` or
+`agent.provider` is fixed to `acp`. Kiro Crew defaults to `kiro-cli` over the
+Agent Client Protocol; `agent.acp_backend = "codex"` selects an authenticated
+Codex CLI app-server for new sessions. Set the dashboard port with `KIROCREW_PORT` or
 `kirocrew gateway --port <n>`. Messaging-channel credentials (Slack, Discord,
 Telegram, and the rest) live in `~/.kiro/crew/.env` rather than the JSON config.
+
+This fork is based on upstream 0.5.0. Select **Developer → Agent Backend →
+Codex CLI** to use the optional native adapter through Kiro Crew's provider
+registry. Codex keeps its own login, models and threads; the chat menu can fork
+or continue a CLI thread, and the usage popup shows subscription quota remaining.
+The Linux Docker registry credential grant is under **Settings → Security**.
+Kiro remains the default harness. Existing Codex Crew installations are not
+automatically replaced or migrated by this source checkout.
 
 **Troubleshoot quickly.** Start with `kirocrew doctor`. For an ACP timeout,
 confirm `kiro-cli` is on `PATH` and logged in, then allow extra time for the

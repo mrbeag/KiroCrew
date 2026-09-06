@@ -21,9 +21,9 @@ matching reads as a green signal, which is worse than no gate, so each rule is
 exercised against a planted probe before the real check runs. `pytest` runs the
 same self-test, so a broken regex also fails a local test run.
 
-## The six rules
+## The seven rules
 
-Each names the invariant it closes. All six are line-shape rules on added lines;
+Each names the invariant it closes. All seven are line-shape rules on added lines;
 none of them needs to resolve an import, which is why the job needs no
 `setup-python` and no dependency install.
 
@@ -33,7 +33,8 @@ none of them needs to resolve an import, which is why the job needs no
 | `negative-constant` | H5 | `!= ACP_BACKEND_KAS` and its mirror — an inequality captures every harness added later |
 | `bare-literal` | H8 | `backend == "kas"` — `ACP_BACKEND_KIRO` is the empty string, so only the named constant is legible |
 | `sandbox-delegation` | H7 | `is_kiro_cli=` derived from a negation. This flag makes `wrap_argv` SKIP Kiro Crew's seatbelt, so it fails OPEN |
-| `vocabulary-home` | H8 | an `ACP_BACKEND_*` identifier or `ACP_BACKENDS_*` set defined outside `acp/types.py` |
+| `identifier-home` | H8 | an `ACP_BACKEND_*` identifier defined outside `acp_backends.py` |
+| `capability-home` | H8 | an `ACP_BACKENDS_*` capability set defined outside `acp/types.py` |
 | `non-kiro-default` | H1 | `default=ACP_BACKEND_KAS` and equivalents — an operator who configures nothing gets Kiro |
 
 ## Why diff-scoped rather than whole-tree
@@ -62,8 +63,9 @@ checks out was computed against that exact commit, so the diff cannot pick up
   contain one and truncating there would hide the real call site behind it.
 - **`scripts/check_harness_parity.py` and `test/test_harness_parity.py`**, which
   spell every forbidden form out literally.
-- **`src/kiro_crew/acp/types.py`**, for the two vocabulary rules only. It is the
-  module those definitions are supposed to live in.
+- **`src/kiro_crew/acp_backends.py`**, for backend identifiers, and
+  **`src/kiro_crew/acp/types.py`**, for capability sets. They are the vocabulary
+  modules those definitions are supposed to live in.
 
 ## Escape hatch
 

@@ -4893,6 +4893,11 @@ async def _run_chat(
     # its reason steered in-band (see _refusal_notices); this ledger is what the
     # FALLBACK continuation carries when that could not be delivered.
     _refusal_reasons: list[tuple[str, str]] = []
+    # Set only by assistant text that arrives after a system-side tool block.
+    # Earlier pre-tool prose is not evidence that the model recovered from the
+    # block, while any later visible response means an extra recovery turn would
+    # duplicate a turn that already completed on its own.
+    _responded_after_refusal = False
     # In-band policy notices steered into THIS turn (see _steer_policy_notice).
     # The list holds only those still unconfirmed: the `steering_consumed` echo
     # settles entries out of it and counts them here instead, so the total ever
@@ -5999,6 +6004,8 @@ async def _run_chat(
                 _flush_thinking_stream()
 
             if event.kind == EVENT_TEXT_CHUNK:
+                if _refusal_reasons and event.text:
+                    _responded_after_refusal = True
                 # If we just exited a tool group, finalize the streaming
                 # message so post-tool text starts a fresh message.
                 if in_tool_group:
@@ -8906,6 +8913,7 @@ async def _run_chat(
             _stop_reason,
             notices_sent=len(_refusal_notices) + _refusal_notices_settled,
             notices_pending=len(_refusal_notices),
+            responded_after_refusal=_responded_after_refusal,
         ):
             _recovery_body = build_refusal_recovery_prompt(_refusal_reasons)
             if _recovery_body:

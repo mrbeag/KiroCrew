@@ -17,7 +17,8 @@ from typing import Any
 from aiohttp import web
 
 from kiro_crew import model_registry
-from kiro_crew.acp.types import TurnUsage
+from kiro_crew.acp.types import ACP_BACKEND_CODEX, PROVIDER_LABEL_CODEX, TurnUsage
+from kiro_crew.config.loader import KiroCrewConfig
 from kiro_crew.config.paths import data_home, kiro_sessions_dir
 from kiro_crew.context_blocks import USER_LABEL
 from kiro_crew.hooks import validate_file_path
@@ -1889,6 +1890,69 @@ async def api_kiro_usage(request: web.Request) -> web.Response:
             _CACHE_TS = time.time()
 
     return web.json_response(response)
+
+
+def _codex_rate_window(value: object) -> dict[str, int | None] | None:
+    """Validate one app-server RateLimitWindow for the browser boundary."""
+    if not isinstance(value, dict):
+        return None
+    used = value.get("usedPercent")
+    if not isinstance(used, int) or isinstance(used, bool):
+        return None
+    window = value.get("windowDurationMins")
+    resets = value.get("resetsAt")
+    return {
+        "used_percent": max(0, min(100, used)),
+        "window_minutes": (
+            window if isinstance(window, int) and not isinstance(window, bool) else None
+        ),
+        "resets_at": (resets if isinstance(resets, int) and not isinstance(resets, bool) else None),
+    }
+
+
+async def api_codex_usage(request: web.Request) -> web.Response:
+    """GET /api/usage/codex — native Codex subscription rate-limit windows."""
+    cfg = KiroCrewConfig.load()
+    if cfg.agent.acp_backend != ACP_BACKEND_CODEX:
+        return web.json_response({"available": False})
+
+    try:
+        from kiro_crew.providers.codex.metadata import codex_rate_limits
+
+        live_client = None
+        state = request.app.get("state")
+        sessions = getattr(state, "sessions", None)
+        active = getattr(sessions, "active_providers", None)
+        if callable(active):
+            for provider in active():
+                if getattr(provider, "provider_label", None) == PROVIDER_LABEL_CODEX:
+                    live_client = getattr(provider, "client", None)
+                    if live_client is not None:
+                        break
+        result = await codex_rate_limits(
+            sandbox_mode=cfg.agent.sandbox,
+            live_client=live_client,
+        )
+        limits = result.get("rateLimits")
+        if not isinstance(limits, dict):
+            return web.json_response({"available": False})
+        plan = limits.get("planType")
+        credits = limits.get("credits")
+        return web.json_response(
+            {
+                "available": True,
+                "plan": plan if isinstance(plan, str) else None,
+                "limit_name": (
+                    limits.get("limitName") if isinstance(limits.get("limitName"), str) else None
+                ),
+                "primary": _codex_rate_window(limits.get("primary")),
+                "secondary": _codex_rate_window(limits.get("secondary")),
+                "credits": credits if isinstance(credits, dict) else None,
+            }
+        )
+    except Exception:
+        logger.warning("Codex usage unavailable", exc_info=True)
+        return web.json_response({"error": "Codex usage unavailable"}, status=503)
 
 
 async def api_usage(request: web.Request) -> web.Response:

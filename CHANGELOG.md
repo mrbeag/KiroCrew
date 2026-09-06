@@ -2,6 +2,40 @@
 
 All notable changes to KiroCrew are documented in this file.
 
+## [0.5.0-1.0] — 2026-09-06
+
+The fork moves to upstream Kiro Crew 0.5.0 and adds native Codex support through
+the upstream provider registry. Kiro remains the default harness.
+
+### Before you upgrade
+
+- **Separate from Codex Crew** — this package uses Kiro Crew's name and service.
+  Keep a data backup and stop the old gateway before switching services.
+- **Manual fork updates** — install packages from this repository's releases;
+  the desktop does not replace this fork with upstream auto-updates.
+
+### Codex sessions
+
+- **Native harness** — use your authenticated Codex CLI for chat, tool approvals,
+  steering and native thread resume, with models discovered from your account.
+- **Import existing work** — fork a CLI thread into a new context or continue
+  the original. Native context is retained independently of displayed history.
+- **Remaining usage** — open the usage indicator to see remaining subscription
+  windows and reset times.
+
+### Notable fixes
+
+- **Long sessions** — bounded recent-history reads reduce disk pressure;
+  Linux heap reclamation releases unused allocator memory.
+- **Steering** — accepted native steering is settled without a duplicate turn.
+  Completed responses do not queue stale refusal-recovery messages.
+- **Docker registries** — an owner-only Linux switch grants read-only credential
+  snapshots to new sessions, temporarily or until explicitly disabled.
+
+### Contributors
+
+@mrbeag
+
 ## [0.5.0] — 2026-08-29
 
 Your AWS account gets a control room and your whole fleet gets one centrally

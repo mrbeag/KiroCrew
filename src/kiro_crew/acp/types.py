@@ -14,6 +14,7 @@ from typing import Any
 # unchanged — see the "ACP Backend Identifiers" section below for why they moved.
 from kiro_crew.acp_backends import (  # noqa: F401 - re-exported for existing importers
     ACP_BACKEND_CLAUDE,
+    ACP_BACKEND_CODEX,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
     ACP_BACKENDS_KNOWN,
@@ -132,6 +133,11 @@ ACP_CLIENT_CAPABILITIES: dict = {
 # extends (``register_selectable_backend``). A frozen ``ACP_BACKENDS_SELECTABLE``
 # snapshot here would be read before boot registration and silently miss it.
 
+# Backends spoken through the ACP adapter. Codex is known and selectable, but
+# uses its native app-server protocol through ProviderRegistry. Keeping this a
+# strict subset prevents a native harness from falling through to kiro-cli.
+ACP_BACKENDS_ACP_ADAPTER = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_CLAUDE, ACP_BACKEND_KAS})
+
 # ── Capability membership (harness-parity H6, H7) ──
 # Every capability a backend may claim is an OPT-IN set here, never a negation at
 # the call site. ``not is_claude_backend`` reads correctly with two backends and
@@ -208,6 +214,7 @@ ACP_BACKENDS_KIRO_IDENTITY_STORE = frozenset({ACP_BACKEND_KIRO, ACP_BACKEND_KAS}
 # An absent label means kiro-cli, which is the default backend.
 PROVIDER_LABEL_DEFAULT = "acp"
 PROVIDER_LABEL_CLAUDE = "claude_code"
+PROVIDER_LABEL_CODEX = "codex"
 PROVIDER_LABEL_KAS = "kas"
 
 # KAS reads only fs.readTextFile / fs.writeTextFile / terminal from the top

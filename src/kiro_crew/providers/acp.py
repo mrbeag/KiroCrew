@@ -26,9 +26,9 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_CLAUDE,
     ACP_BACKEND_KAS,
     ACP_BACKEND_KIRO,
+    ACP_BACKENDS_ACP_ADAPTER,
     ACP_BACKENDS_ACP_RUNTIME,
     ACP_BACKENDS_KIRO_IDENTITY_STORE,
-    ACP_BACKENDS_KNOWN,
     ACP_BACKENDS_SESSION_SHARING,
     EVENT_COMPACTION_STATUS,
     PROVIDER_LABEL_CLAUDE,
@@ -295,19 +295,21 @@ class AcpProvider(LLMProvider):
         mcp_gateway_socket: str | Path | None = None,
         permission_mode: str | None = None,
         crew_agent: str | None = None,
+        sandbox_expose_docker_config: bool = False,
     ) -> None:
         # An unrecognized backend would pass every ``_is_<backend>`` check and
         # spawn kiro-cli, so a typo'd config would drive the wrong agent with no
         # error. Fail at construction instead.
-        if acp_backend not in ACP_BACKENDS_KNOWN:
+        if acp_backend not in ACP_BACKENDS_ACP_ADAPTER:
             raise ValueError(
                 f"Unknown acp_backend {acp_backend!r}; "
-                f"expected one of {sorted(ACP_BACKENDS_KNOWN)}"
+                f"expected one of {sorted(ACP_BACKENDS_ACP_ADAPTER)}"
             )
         kwargs: dict[str, Any] = {
             "work_dir": work_dir,
             "model": model,
             "sandbox_mode": sandbox_mode,
+            "sandbox_expose_docker_config": sandbox_expose_docker_config,
             "session_key": session_key,
             "channel_id": channel_id,
             "extra_env": extra_env,
@@ -488,6 +490,11 @@ class AcpProvider(LLMProvider):
         until someone adds it deliberately.
         """
         return self._client.backend in ACP_BACKENDS_SESSION_SHARING
+
+    @property
+    def is_warm_pool_eligible(self) -> bool:
+        """ACP providers implement the established pool re-key contract."""
+        return True
 
     @property
     def uses_kiro_identity_store(self) -> bool:
@@ -694,6 +701,7 @@ class AcpProvider(LLMProvider):
         work_dir = self._client._work_dir
         agent = getattr(self._client, "_agent", None) or ""
         sandbox_mode = getattr(self._client, "_sandbox_mode", "auto")
+        sandbox_expose_docker_config = getattr(self._client, "_sandbox_expose_docker_config", False)
         extra_env = getattr(self._client, "_extra_env", None) or {}
         mcp_gateway_overlay = getattr(self._client, "_mcp_gateway_overlay", None)
         mcp_gateway_settings_mcp_json = getattr(
@@ -714,6 +722,7 @@ class AcpProvider(LLMProvider):
             work_dir=work_dir,
             agent=agent or "kirocrew",
             sandbox_mode=sandbox_mode,
+            sandbox_expose_docker_config=sandbox_expose_docker_config,
             extra_env=extra_env,
             mcp_gateway_overlay=mcp_gateway_overlay,
             mcp_gateway_settings_mcp_json=mcp_gateway_settings_mcp_json,
@@ -814,6 +823,7 @@ class AcpProvider(LLMProvider):
                         work_dir=work_dir,
                         agent=agent or "kirocrew",
                         sandbox_mode=sandbox_mode,
+                        sandbox_expose_docker_config=sandbox_expose_docker_config,
                         extra_env=extra_env,
                         mcp_gateway_overlay=mcp_gateway_overlay,
                         mcp_gateway_settings_mcp_json=mcp_gateway_settings_mcp_json,
@@ -1506,6 +1516,8 @@ def provider_label(provider: Any) -> str:
     elif isinstance(provider, AcpProvider):
         backend = getattr(getattr(provider, "client", None), "backend", "")
     else:
+        if isinstance(provider, LLMProvider):
+            return provider.provider_label
         return PROVIDER_LABEL_DEFAULT
     if backend == ACP_BACKEND_CLAUDE:
         return PROVIDER_LABEL_CLAUDE

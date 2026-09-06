@@ -331,6 +331,24 @@ class TestRecoveryIsNowAFallback:
             notices_pending=0,
         )
 
+    def test_assistant_response_after_refusal_skips_stale_recovery(self):
+        assert not should_queue_refusal_recovery(
+            self.REFUSALS,
+            stopping=False,
+            needs_reset=False,
+            stop_reason="end_turn",
+            responded_after_refusal=True,
+        )
+
+    def test_output_before_refusal_does_not_suppress_recovery(self):
+        assert should_queue_refusal_recovery(
+            self.REFUSALS,
+            stopping=False,
+            needs_reset=False,
+            stop_reason="end_turn",
+            responded_after_refusal=False,
+        )
+
     def test_unconfirmed_notice_still_queues_the_fallback(self):
         # No steering_consumed echo covered it — the turn may have ended before
         # any model-inference boundary, so the model was told nothing.

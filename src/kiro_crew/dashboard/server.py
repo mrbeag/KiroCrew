@@ -3536,6 +3536,7 @@ async def start_dashboard(
         # the process while its config filesystem is itself under pressure.
         _exit_after = float(resolve_loop_stall_exit_after(environ=_launch_environment))
     _loop_watchdog = LoopStallWatchdog(dump_file=_dump_file, exit_after=_exit_after)
+    _heap_trim_maintainer = platform_compat.HeapTrimMaintainer()
 
     async def _loop_heartbeat() -> None:
         # 5s (not 10s) so the watchdog's armed dump-then-exit timer is re-petted
@@ -3558,6 +3559,12 @@ async def start_dashboard(
             # block the loop this heartbeat exists to watch. After the lag
             # read so the await can't register as loop lag.
             await state.resource_pressure_notifier.maybe_sample()
+            released = await _heap_trim_maintainer.maybe_trim()
+            if released >= platform_compat.HEAP_TRIM_LOG_THRESHOLD_BYTES:
+                logger.info(
+                    "Gateway heap trim returned %.0f MiB to the OS",
+                    released / (1024 * 1024),
+                )
             if lag > 1.0:
                 logger.warning("event-loop heartbeat: lag %.1fs (loop was blocked)", lag)
             else:

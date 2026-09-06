@@ -66,21 +66,20 @@ class InterceptDecision(enum.Enum):
 class ProviderRegistry(Protocol):
     """The LLM-provider factory + ACP-backend registration seam.
 
-    The public edition ships Kiro-CLI-ACP only.  The companion uses
-    ``register_acp_backends`` to re-register a Claude backend through the dormant
-    ``ACP_BACKEND_CLAUDE`` seam without the core changing.
+    The public edition keeps Kiro-CLI-ACP as its default and may select adapted
+    public harnesses here. The companion uses ``register_acp_backends`` to
+    re-register a Claude backend through the dormant ``ACP_BACKEND_CLAUDE`` seam.
     """
 
     def create_factory(self, cfg: "KiroCrewConfig") -> Callable[..., Any]:
-        """Return the provider factory (Default: ``cfg.create_provider_factory()``).
+        """Return the provider factory for the configured harness.
 
         WIRED: every factory build site routes through
         ``config.loader.build_provider_factory`` →
-        ``current_context().providers.create_factory(cfg)``. The Default returns
-        exactly ``cfg.create_provider_factory()`` (identity), so the public
-        edition is unchanged; a companion can return an alternate factory (e.g.
-        re-registering an alternate ACP backend) — but kiro-cli stays the default
-        for both editions unless the companion is explicitly opted in.
+        ``current_context().providers.create_factory(cfg)``. The Default delegates
+        the Kiro/ACP path to ``cfg.create_provider_factory()`` and selects public
+        native adapters explicitly; a companion can return an alternate factory.
+        Kiro CLI stays the default unless an operator explicitly opts in.
         """
         ...
 

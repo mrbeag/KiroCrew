@@ -226,6 +226,15 @@ async def steer_into_running_turn(
         logger.warning("steer failed for slot %s: %s", slot.key, exc)
         steered = False
 
+    # Native Codex acknowledges consumption in the response, without ACP's
+    # later steering_consumed echo. Leave stop/requeue reconciliation below
+    # authoritative when teardown already moved or discarded the registration.
+    if steered and getattr(client, "steer_response_confirms_consumed", False) is True:
+        try:
+            slot._pending_steers.remove(message)
+        except ValueError:
+            pass
+
     # ONE reconciliation for every path. The outcome turns on WHERE the text is
     # now, not on `steered`: the RPC returning True only means the client
     # accepted the write, and the turn it was written into may already have ended

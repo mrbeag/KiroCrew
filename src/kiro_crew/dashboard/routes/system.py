@@ -62,6 +62,7 @@ def register(app: web.Application) -> None:
     app.router.add_get("/api/sessions/memory", handlers.api_sessions_memory)
     app.router.add_get("/api/sessions/health", handlers.api_sessions_health)
     app.router.add_get("/api/sessions/usage", handlers.api_sessions_usage)
+    app.router.add_get("/api/usage/codex", handlers.api_codex_usage)
     app.router.add_get("/api/usage/kiro", handlers.api_kiro_usage)
     app.router.add_get("/api/usage", handlers.api_usage)
     app.router.add_get("/api/telemetry/startup", handlers.api_telemetry_startup)
@@ -123,6 +124,16 @@ def register(app: web.Application) -> None:
     # set and is registered in ``_register_mcp_routes``.
     app.router.add_get("/api/computer-use/config", handlers.api_computer_use_config_get)
     app.router.add_put("/api/computer-use/config", handlers.api_computer_use_config_save)
+
+    # Docker registry credential access is an owner-only keystone grant, not a
+    # generic config preference. Existing sessions retain their namespace;
+    # changing it refreshes only the factory and warm pool for future sessions.
+    app.router.add_get(
+        "/api/security/docker-registry-access", handlers.api_docker_registry_access_get
+    )
+    app.router.add_put(
+        "/api/security/docker-registry-access", handlers.api_docker_registry_access_put
+    )
 
     # Paid-AWS-service consent (Settings > Voice). Browser-called and
     # cookie-authed like the computer-use pair above, and for the same reason:

@@ -39,7 +39,7 @@ import { useNotificationSound } from './hooks/useNotificationSound'
 import { recordSessionStart, recordEvent } from './rum'
 import { ZoomProvider } from './hooks/ZoomProvider'
 import { api, isAuthBannerShown } from './api/client'
-import type { KiroCreditUsage, KiroUsagePayload } from './api/client'
+import type { CodexUsagePayload, KiroCreditUsage, KiroUsagePayload } from './api/client'
 import { safeSetItem } from './utils/safeStorage'
 import { gcOrphanedStorage } from './utils/storageGc'
 import { isMetricNumber, metricNumber } from './utils/metrics'
@@ -121,6 +121,7 @@ import QuickSearchSurface from './components/QuickSearchSurface'
 import ReportProblemModal from './components/ReportProblemModal'
 import FeedbackPill from './components/FeedbackPill'
 import KiroAccountModal, { type KiroAccountUsage } from './components/KiroAccountModal'
+import CodexUsageModal, { type CodexUsageState } from './components/CodexUsageModal'
 import WindowsTitlebarMenu from './components/WindowsTitlebarMenu'
 
 import { i18nT } from './i18n/t'
@@ -1679,6 +1680,7 @@ export default function App() {
   const [updating, setUpdating] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [kiroUsageOpen, setKiroUsageOpen] = useState(false)
+  const [codexUsageOpen, setCodexUsageOpen] = useState(false)
   const [changes, setChanges] = useState('')
   const [showChangelog, setShowChangelog] = useState(false)
   const [autoUpdate, setAutoUpdate] = useState(true)
@@ -1906,6 +1908,25 @@ export default function App() {
   // than once (strip + inline header copies).
   useInstanceShortcuts()
 
+  const { data: usageConfig } = useQuery<{ agent?: { acp_backend?: string } }>({
+    queryKey: ['kirocrewConfig'],
+    queryFn: () => api.kirocrewConfig(),
+    staleTime: 30_000,
+  })
+  const codexHarness = usageConfig?.agent?.acp_backend === 'codex'
+  const { data: codexUsage, isError: codexUsageFailed } = useQuery<CodexUsagePayload>({
+    queryKey: ['codex-usage'],
+    queryFn: () => api.codexUsage(),
+    enabled: codexHarness,
+    refetchInterval: 30_000,
+  })
+  const codexUsageState: CodexUsageState = codexUsageFailed && !codexUsage
+    ? 'failed'
+    : (codexUsage ?? null)
+  useEffect(() => {
+    if (!codexHarness) setCodexUsageOpen(false)
+  }, [codexHarness])
+
   // Kiro CLI monthly credit usage. /api/sessions/usage TRIGGERS the background
   // `kiro-cli /usage` fetch AND returns the cached result, so the pill is
   // self-sufficient on any page. Month-to-date total = credits_used, which the
@@ -1994,6 +2015,7 @@ export default function App() {
       if (u.available === false) return u.reason === 'api_key_auth' ? ('api-key' as const) : ('none' as const)
       return null
     }),
+    enabled: !codexHarness,
     refetchInterval: 30_000,
   })
   // Auto-close the details modal if usage resolves to unavailable — the pill
@@ -2783,10 +2805,35 @@ export default function App() {
                 <span className={dskValid ? metricColor(dskPct) : 'text-muted'}>{i18nT('app.dsk')} {dskValid ? fmtPercent(dskPct) : '\u2014'}</span>
               </span>)
             }
-            // Usage segment — Kiro credit plan from KiroCrew's own usage
-            // cache. Spinner while the cache warms, a dash when the fetch
-            // failed, hidden when the provider has no credit plan at all.
-            if (kiroUsageState !== 'none') {
+            // Usage follows the selected harness. Native Codex reports rolling
+            // subscription windows through app-server; Kiro retains its credit
+            // plan readout when the operator explicitly selects kiro-cli.
+            if (codexHarness) {
+              const primary = codexUsage?.primary
+              if (codexUsageFailed && !codexUsage) {
+                segments.push(<button key="usage" className={`${seg} text-muted opacity-60`} onClick={() => setCodexUsageOpen(true)} title={i18nT('app.codex_usage_unavailable')} aria-label={i18nT('app.codex_usage_unavailable')}><Coins size={12} /> <span className="font-mono text-[11px] tabular-nums">—</span></button>)
+              } else if (!codexUsage) {
+                segments.push(<button key="usage" className={`${seg} text-muted`} onClick={() => setCodexUsageOpen(true)} title={i18nT('app.codex_usage_checking')} aria-label={i18nT('app.codex_usage_checking')}><Coins size={12} /> {!isMobile && <Loader2 size={11} className="animate-spin" />}</button>)
+              } else if (codexUsage.available && primary) {
+                const secondary = codexUsage.secondary
+                const primaryRemaining = Math.min(Math.max(100 - primary.used_percent, 0), 100)
+                const secondaryRemaining = secondary
+                  ? Math.min(Math.max(100 - secondary.used_percent, 0), 100)
+                  : null
+                const title = [
+                  i18nT('app.codex'),
+                  `${primary.window_minutes ?? '—'}m · ${i18nT('components.codexUsageModal.remaining', { percent: fmtPercent(primaryRemaining / 100) })}`,
+                  secondary && secondaryRemaining != null
+                    ? `${secondary.window_minutes ?? '—'}m · ${i18nT('components.codexUsageModal.remaining', { percent: fmtPercent(secondaryRemaining / 100) })}`
+                    : '',
+                ].filter(Boolean).join(' · ')
+                segments.push(<button key="usage" className={seg} onClick={() => setCodexUsageOpen(true)} title={title} aria-label={title}>
+                  <Coins size={12} /> {!isMobile && <span className="tb-drop-usage font-mono text-[11px] whitespace-nowrap tabular-nums">{i18nT('app.codex')} <span className={metricColor((100 - primaryRemaining) / 100)}>{fmtPercent(primaryRemaining / 100)}</span></span>}
+                </button>)
+              } else {
+                segments.push(<button key="usage" className={`${seg} text-muted opacity-60`} onClick={() => setCodexUsageOpen(true)} title={i18nT('app.codex_usage_unavailable')} aria-label={i18nT('app.codex_usage_unavailable')}><Coins size={12} /> <span className="font-mono text-[11px] tabular-nums">—</span></button>)
+              }
+            } else if (kiroUsageState !== 'none') {
               if (kiroUsageState === 'failed') {
                 // Failed with nothing cached to fall back on. A dash says that;
                 // a spinner would claim a fetch is still in flight. A failure
@@ -3612,6 +3659,7 @@ export default function App() {
     </WsContext.Provider>
     {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
     <KiroAccountModal open={kiroUsageOpen} onClose={() => setKiroUsageOpen(false)} usage={kiroUsageState} />
+    <CodexUsageModal open={codexUsageOpen} onClose={() => setCodexUsageOpen(false)} usage={codexUsageState} />
     <QuickSearchSurface
       owners={slotOwners}
       open={commandPalette.open}

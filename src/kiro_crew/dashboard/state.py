@@ -2297,6 +2297,7 @@ def should_queue_refusal_recovery(
     *,
     notices_sent: int = 0,
     notices_pending: int = 0,
+    responded_after_refusal: bool = False,
 ) -> bool:
     """Decide whether to auto-queue a refusal-recovery prompt after a turn.
 
@@ -2306,6 +2307,7 @@ def should_queue_refusal_recovery(
     - A session reset is already re-queuing
     - The turn was cancelled by the user (not a policy block)
     - Every refusal was already explained IN-BAND and the backend confirmed it
+    - The assistant continued with visible output after the refusal
 
     ``notices_sent`` is how many :func:`build_refusal_steer_notice` bodies were
     steered into the turn, and ``notices_pending`` how many of those the
@@ -2318,9 +2320,16 @@ def should_queue_refusal_recovery(
     wrongly costs one turn the model would otherwise have been told twice — which
     is exactly what this path already cost before in-band delivery existed.
 
-    Both are keyword-only with defaults so a caller on a harness without mid-turn
-    steer keeps the original three-condition behaviour unchanged.
+    ``responded_after_refusal`` is stronger evidence than a steering echo: the
+    model continued after the rejected call and completed its own response, so a
+    second automatic turn would repeat work that already landed. Output emitted
+    before the refusal does not set it.
+
+    All three are keyword-only with defaults so a caller on a harness without
+    mid-turn steer keeps the original behaviour unchanged.
     """
+    if responded_after_refusal:
+        return False
     if refusal_reasons and notices_sent >= len(refusal_reasons) and notices_pending == 0:
         return False
     return bool(

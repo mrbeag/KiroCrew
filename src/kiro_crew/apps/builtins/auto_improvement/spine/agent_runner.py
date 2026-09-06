@@ -1160,9 +1160,9 @@ class SessionAgentRunner:
         self._total_cost_usd = 0.0
         self._stop_check = stop_check
         self._on_activity = on_activity if callable(on_activity) else None
-        # The Kiro Crew provider factory (``cfg.create_provider_factory()``). Injectable for
-        # tests; resolved lazily from config when None so importing this module never loads
-        # the whole config/provider stack.
+        # The Kiro Crew provider factory. Injectable for tests; resolved lazily
+        # through the platform registry when None so adapted public harnesses
+        # and companion-provided harnesses follow the same dispatch as chat.
         self._provider_factory = provider_factory
 
     def total_cost_usd(self) -> float:
@@ -1175,9 +1175,10 @@ class SessionAgentRunner:
         Lets the backend prefer this runner and fall back to the subprocess ``claude -p``
         runner only when no provider is available."""
         try:
-
             cfg = KiroCrewConfig.load()
-            return cfg.create_provider_factory() is not None
+            from kiro_crew.config.loader import build_provider_factory
+
+            return build_provider_factory(cfg) is not None
         except Exception:  # noqa: BLE001 — any failure → not available, caller falls back
             return False
 
@@ -1246,7 +1247,9 @@ class SessionAgentRunner:
             return self._provider_factory
 
         cfg = KiroCrewConfig.load()
-        self._provider_factory = cfg.create_provider_factory()
+        from kiro_crew.config.loader import build_provider_factory
+
+        self._provider_factory = build_provider_factory(cfg)
         return self._provider_factory
 
     def _emit_activity(self, ev: dict) -> None:

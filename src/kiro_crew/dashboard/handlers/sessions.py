@@ -935,6 +935,11 @@ async def _fetch_usage_bg() -> None:
 
 async def api_sessions_usage(request: web.Request) -> web.Response:
     """GET /api/sessions/usage — cached kiro credit usage (background refresh)."""
+    state: DashboardState = request.app["state"]
+    sessions = getattr(state, "sessions", None)
+    uses_kiro_identity = getattr(sessions, "uses_kiro_identity_store", None)
+    if callable(uses_kiro_identity) and not uses_kiro_identity():
+        return web.json_response({"usage": None})
     # Same browser-storm guard as api_models: the /usage scrape shells out to
     # `kiro-cli chat --no-interactive ... /usage`, which auto-opens a browser
     # login while signed out. This endpoint is polled every 30s by the top-bar
@@ -951,7 +956,6 @@ async def api_sessions_usage(request: web.Request) -> web.Response:
         # would fire on nearly every poll, and each fire can reach the `/usage`
         # text scrape, which spends credits. A faster readout is not worth billing
         # the user for it; a profile switch is picked up on the next interval.
-        state: DashboardState = request.app["state"]
         task = asyncio.create_task(_fetch_usage_bg())
         state._background_tasks.add(task)
         task.add_done_callback(state._background_tasks.discard)

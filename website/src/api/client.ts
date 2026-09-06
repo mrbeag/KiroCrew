@@ -349,6 +349,14 @@ export interface ComputerUseConfigSave {
   extra_denied_apps: string[]
 }
 
+/** Owner-only Docker registry credential grant state. */
+export interface DockerRegistryAccessData {
+  /** Effective owner decision. Expired grants are reported as false. */
+  enabled: boolean
+  /** True only where the Linux namespace snapshot mechanism exists. */
+  supported: boolean
+}
+
 /** Slack config as returned by GET /api/slack/config (secrets masked). */
 export interface SlackConfigData {
   connected: boolean
@@ -1841,6 +1849,41 @@ export interface KasLoginPollResult {
   error?: string
 }
 
+export interface CodexRateLimitWindow {
+  used_percent: number
+  window_minutes: number | null
+  resets_at: number | null
+}
+
+export interface CodexUsagePayload {
+  available: boolean
+  plan?: string | null
+  limit_name?: string | null
+  primary?: CodexRateLimitWindow | null
+  secondary?: CodexRateLimitWindow | null
+  credits?: { hasCredits?: boolean; unlimited?: boolean; balance?: string | null } | null
+}
+
+export interface CodexThreadSummary {
+  id: string
+  title: string
+  preview: string
+  cwd: string
+  created_at: number | null
+  updated_at: number | null
+  source: unknown
+  imported: boolean
+  local_session: string
+}
+
+export interface CodexThreadImportResult {
+  key: string
+  title?: string
+  codex_thread_id: string
+  import_mode: 'fork' | 'resume'
+  imported_messages: number
+}
+
 export interface AgentImportCategory {
   id: string
   label: string
@@ -2675,6 +2718,7 @@ export const api = {
   // install (AIM / kiro usage are stubbed). Kept so the UI compiles and
   // degrades gracefully (panels render empty when the feature is absent).
   kiroUsage: () => fetch('/api/usage/kiro').then(j),
+  codexUsage: () => fetch('/api/usage/codex').then(j) as Promise<CodexUsagePayload>,
   capabilityMcpList: () => fetch('/api/capability/mcp').then(j),
   capabilityMcpInstall: (serverId: string) => post('/api/capability/mcp/install', { server_id: serverId }).then(j),
   capabilityMcpUninstall: (serverId: string) => post('/api/capability/mcp/uninstall', { server_id: serverId }).then(j),
@@ -2752,13 +2796,19 @@ export const api = {
    *  this is called. */
   chatSlotSourceLinks: (slot: string): Promise<{ links: NonNullable<ChatSlot['source_links']>; total: number }> =>
     fetch('/api/chat/slots/' + encodeURIComponent(slot) + '/source-links').then(j),
-  chatSlotDetail: (slot: string, limit?: number, before?: number, signal?: AbortSignal) => {
+  chatSlotDetail: (slot: string, limit = 200, before?: number, signal?: AbortSignal) => {
     const p = new URLSearchParams()
     if (limit) p.set('limit', String(limit))
     if (before !== undefined) p.set('before', String(before))
     return fetch('/api/chat/slots/' + encodeURIComponent(slot) + '?' + p, { signal }).then(j)
   },
   createChatSlot: (name?: string, agent?: string, model?: string, mode?: string, memory_mode?: string, title?: string, clean_mode?: boolean, artifact?: string, folder_id?: string) => post('/api/chat/slots', { ...(name ? { name } : {}), ...(agent ? { agent } : {}), ...(model ? { model } : {}), ...(mode ? { mode } : {}), ...(memory_mode ? { memory_mode } : {}), ...(title ? { title } : {}), ...(clean_mode !== undefined ? { clean_mode } : {}), ...(artifact ? { artifact } : {}), ...(folder_id ? { folder_id } : {}) }).then(j),
+  codexThreads: (search = ''): Promise<{ threads: CodexThreadSummary[] }> => {
+    const query = search ? `?search=${encodeURIComponent(search)}` : ''
+    return fetch(`/api/codex/threads${query}`).then(j)
+  },
+  importCodexThread: (threadId: string, mode: 'fork' | 'resume'): Promise<CodexThreadImportResult> =>
+    post('/api/codex/threads/import', { thread_id: threadId, mode }).then(j),
   /** Inject silent background context into a slot — consumed on the next user
    * message. Used by the artifact companion chat to name the bound artifact so
    * the user's first message needs no slug boilerplate. */
@@ -3456,6 +3506,10 @@ export const api = {
   getComputerUseConfig: () => get('/api/computer-use/config').then(j) as Promise<ComputerUseConfigData>,
   saveComputerUseConfig: (body: Partial<ComputerUseConfigSave>) =>
     put('/api/computer-use/config', body).then(j) as Promise<ComputerUseConfigData>,
+  getDockerRegistryAccess: () =>
+    get('/api/security/docker-registry-access').then(j) as Promise<DockerRegistryAccessData>,
+  saveDockerRegistryAccess: (enabled: boolean, permanent = false) =>
+    put('/api/security/docker-registry-access', { enabled, permanent }).then(j) as Promise<DockerRegistryAccessData>,
   // Slack integration config
   getSlackConfig: () => get('/api/slack/config').then(j) as Promise<SlackConfigData>,
   getSlackManifest: () => get('/api/slack/manifest').then(j) as Promise<{ alias: string; manifest: string; create_url: string }>,
