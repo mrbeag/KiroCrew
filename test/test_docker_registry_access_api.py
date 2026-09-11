@@ -62,7 +62,8 @@ async def test_owner_grant_uses_keystone_and_refreshes_future_sessions(tmp_path)
     with _patch_state(state_path):
         async with TestClient(TestServer(app)) as client:
             response = await client.put(
-                "/api/security/docker-registry-access", json={"enabled": True}
+                "/api/security/docker-registry-access",
+                json={"enabled": True, "permanent": False, "acknowledged": True},
             )
             assert response.status == 200
             assert await response.json() == {
@@ -107,7 +108,8 @@ async def test_failed_keystone_write_fails_closed(tmp_path) -> None:
     ):
         async with TestClient(TestServer(app)) as client:
             response = await client.put(
-                "/api/security/docker-registry-access", json={"enabled": True}
+                "/api/security/docker-registry-access",
+                json={"enabled": True, "permanent": False, "acknowledged": True},
             )
             response_body = await response.json()
 
@@ -125,7 +127,8 @@ async def test_committed_grant_survives_refresh_failure(tmp_path) -> None:
     with _patch_state(state_path):
         async with TestClient(TestServer(app)) as client:
             response = await client.put(
-                "/api/security/docker-registry-access", json={"enabled": True}
+                "/api/security/docker-registry-access",
+                json={"enabled": True, "permanent": False, "acknowledged": True},
             )
             response_body = await response.json()
 
@@ -164,7 +167,7 @@ async def test_non_owner_cannot_read_or_write_the_grant(tmp_path) -> None:
             get_response = await client.get("/api/security/docker-registry-access", headers=headers)
             put_response = await client.put(
                 "/api/security/docker-registry-access",
-                json={"enabled": True},
+                json={"enabled": True, "permanent": False, "acknowledged": True},
                 headers=headers,
             )
 
@@ -182,7 +185,7 @@ async def test_owner_can_choose_a_persistent_grant(tmp_path) -> None:
         async with TestClient(TestServer(app)) as client:
             response = await client.put(
                 "/api/security/docker-registry-access",
-                json={"enabled": True, "permanent": True},
+                json={"enabled": True, "permanent": True, "acknowledged": True},
             )
 
     assert response.status == 200
@@ -231,7 +234,8 @@ async def test_non_linux_enable_is_refused(tmp_path) -> None:
     with _patch_state(state_path, platform="darwin"):
         async with TestClient(TestServer(app)) as client:
             response = await client.put(
-                "/api/security/docker-registry-access", json={"enabled": True}
+                "/api/security/docker-registry-access",
+                json={"enabled": True, "permanent": False, "acknowledged": True},
             )
             response_body = await response.json()
 
@@ -251,6 +255,11 @@ async def test_non_linux_enable_is_refused(tmp_path) -> None:
         {"enabled": True, "x": 1},
         {"enabled": False, "permanent": True},
         {"enabled": True, "permanent": "yes"},
+        {"enabled": True},
+        {"enabled": True, "acknowledged": True},
+        {"enabled": True, "permanent": False},
+        {"enabled": True, "permanent": True, "acknowledged": False},
+        {"enabled": True, "permanent": False, "acknowledged": "true"},
     ],
 )
 async def test_invalid_bodies_fail_closed(tmp_path, body) -> None:

@@ -93,11 +93,13 @@ async def api_docker_registry_access_put(request: web.Request) -> web.Response:
     except Exception:
         await _audit(request, outcome="denied", resources="invalid_json")
         return web.json_response({"error": "invalid JSON body", "code": "invalid_json"}, status=400)
-    if not isinstance(body, dict) or not set(body).issubset({"enabled", "permanent"}):
+    if not isinstance(body, dict) or not set(body).issubset(
+        {"enabled", "permanent", "acknowledged"}
+    ):
         await _audit(request, outcome="denied", resources="invalid_body")
         return web.json_response(
             {
-                "error": "body must contain enabled and may contain permanent",
+                "error": "body must contain enabled; grants also require permanent and acknowledged",
                 "code": "invalid_body",
             },
             status=400,
@@ -117,6 +119,13 @@ async def api_docker_registry_access_put(request: web.Request) -> web.Response:
                 "error": "permanent must be boolean and requires enabled=true",
                 "code": "invalid_permanent",
             },
+            status=400,
+        )
+
+    if enabled and ("permanent" not in body or body.get("acknowledged") is not True):
+        await _audit(request, outcome="denied", resources="consent=missing")
+        return web.json_response(
+            {"error": "explicit duration and acknowledgement required", "code": "consent_required"},
             status=400,
         )
 

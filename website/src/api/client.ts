@@ -3508,8 +3508,8 @@ export const api = {
     put('/api/computer-use/config', body).then(j) as Promise<ComputerUseConfigData>,
   getDockerRegistryAccess: () =>
     get('/api/security/docker-registry-access').then(j) as Promise<DockerRegistryAccessData>,
-  saveDockerRegistryAccess: (enabled: boolean, permanent = false) =>
-    put('/api/security/docker-registry-access', { enabled, permanent }).then(j) as Promise<DockerRegistryAccessData>,
+  saveDockerRegistryAccess: (enabled: boolean, permanent = false, acknowledged = false) =>
+    put('/api/security/docker-registry-access', { enabled, permanent, acknowledged }).then(j) as Promise<DockerRegistryAccessData>,
   // Slack integration config
   getSlackConfig: () => get('/api/slack/config').then(j) as Promise<SlackConfigData>,
   getSlackManifest: () => get('/api/slack/manifest').then(j) as Promise<{ alias: string; manifest: string; create_url: string }>,

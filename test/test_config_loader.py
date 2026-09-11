@@ -260,6 +260,28 @@ def test_sandbox_expose_docker_config_uses_operator_keystone(
     )
 
 
+def test_docker_grant_decoder_recursion_fails_closed(tmp_path, monkeypatch):
+    state_path = tmp_path / "docker_registry_access.json"
+    monkeypatch.setattr(loader_module, "docker_registry_access_state_path", lambda: state_path)
+    state_path.write_text('{"enabled": true}', encoding="utf-8")
+
+    def exhausted_decoder(_text):
+        raise RecursionError("nested JSON exceeds decoder limit")
+
+    # Pin the decoder failure rather than an interpreter-dependent nesting depth.
+    with monkeypatch.context() as decoding:
+        decoding.setattr(loader_module.json, "loads", exhausted_decoder)
+        assert loader_module.docker_registry_access_enabled() is False
+
+
+@pytest.mark.parametrize("payload", [b"{", b"\xff", b"[]", b"null"])
+def test_malformed_docker_grant_fails_closed(tmp_path, monkeypatch, payload):
+    state_path = tmp_path / "docker_registry_access.json"
+    monkeypatch.setattr(loader_module, "docker_registry_access_state_path", lambda: state_path)
+    state_path.write_bytes(payload)
+    assert loader_module.docker_registry_access_enabled() is False
+
+
 def test_dashboard_tailscale_hydrates_and_survives_a_round_trip() -> None:
     """The opt-in must survive ``load()`` and a later ``save()``.
 

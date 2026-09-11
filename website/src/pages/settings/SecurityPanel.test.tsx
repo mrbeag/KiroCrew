@@ -331,7 +331,7 @@ describe('SecurityPanel — Docker registry access', () => {
     fireEvent.click(confirm)
 
     await waitFor(() => {
-      expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(true, false)
+      expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(true, false, true)
     })
   })
 
@@ -398,7 +398,7 @@ describe('SecurityPanel — Docker registry access', () => {
       i18nT('pages.settings.securityPanel.docker_access_unsupported'),
     )).toBeInTheDocument()
     fireEvent.click(toggle)
-    await waitFor(() => expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(false, false))
+    await waitFor(() => expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(false, false, false))
   })
 
   it('can explicitly grant access until it is turned off', async () => {
@@ -418,7 +418,7 @@ describe('SecurityPanel — Docker registry access', () => {
       name: i18nT('pages.settings.securityPanel.docker_access_confirm_action'),
     }))
 
-    await waitFor(() => expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(true, true))
+    await waitFor(() => expect(api.saveDockerRegistryAccess).toHaveBeenCalledWith(true, true, true))
   })
 
   it('renders a loading skeleton instead of a false off switch', () => {

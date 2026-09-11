@@ -92,8 +92,11 @@ code could use or disclose the configured registry credentials. macOS and
 non-namespace backends ignore the option rather than widening their sandbox.
 The dashboard exposes the opt-in under **Settings → Security → Docker registry
 credentials**. Its dedicated owner-only PUT handler writes the protected keystone rather
-than agent-writable `config.json`, requires an explicit duration plus acknowledgement,
-and states the credential-disclosure and new-session consequence in place. SEL writes
+than agent-writable `config.json`. Enabling requires an explicit boolean `permanent`
+and `acknowledged: true` in the request; revocation requires neither. This request
+acknowledgement is not proof of human presence. Malformed JSON, invalid UTF-8 and
+JSON decoder recursion errors disable access. The card states the credential-disclosure
+and new-session consequence in place. SEL writes
 for this boundary are offloaded from the gateway event loop.
 
 **Pooled-backend declared-env forwarding (`mcp_gateway.forward_declared_env`, default ON)** — an agent spec may declare `mcpServers.<name>.env`. Under pooling one backend serves many sessions, so the rewriter expands any `${VAR}`/`${env:VAR}` placeholder the block declares — kiro-cli cannot, because the broker spawns the stub rather than the server — writes the resolved block to a `0600` sidecar, and the stub folds it into the `effective_env_hash` PoolKey dimension. Resolving once at write time keeps that sidecar the single source both the stub's hash and `gatewayd`'s coherence re-check read; an unresolved reference is left as a literal `${VAR}`, matching kiro-cli's expander. Placeholders dereference a **filtered view** of the gateway environment, not the raw one: names matching `is_secret_env_key`, `is_credential_env_key`, or the channel-credential scrub (`scrub_agent_denied_env`) are misses. Agent specs are agent-writable, so without that filter `{"TOKEN": "${env:AWS_SECRET_ACCESS_KEY}"}` would smuggle a credential *value* past the key-name filters below — the dereference view mirrors them, so a value the forwarder would refuse under its own name cannot ride in under another (and channel tokens, which the ACP spawn scrub hides from kiro-cli's own expander, are equally invisible here). With the flag ON, `gatewayd` reads the sidecar at **cold spawn only** and applies the surviving keys, filtered twice:

@@ -48,17 +48,17 @@
 
 This fork tracks [kirodotdev/KiroCrew](https://github.com/kirodotdev/KiroCrew),
 currently based on **v0.5.0**, and layers its own changes on top. Releases use
-`{upstream}-1.{n}`: `0.5.0-1.0` means upstream 0.5.0 plus fork revision 1.0;
+`{upstream}-1.{n}`: `0.5.0-1.1` means upstream 0.5.0 plus fork revision 1.1;
 the fork revision increments for fixes and resets on the next upstream rebase.
-The current release is **v0.5.0-1.0**. See [CHANGELOG.md](CHANGELOG.md).
+The current release is **v0.5.0-1.1**. See [CHANGELOG.md](CHANGELOG.md).
 
 Download this fork's Linux Debian package from
-[mrbeag/KiroCrew releases](https://github.com/mrbeag/KiroCrew/releases/tag/v0.5.0-1.0).
+[mrbeag/KiroCrew releases](https://github.com/mrbeag/KiroCrew/releases/tag/v0.5.0-1.1).
 It includes the optional native Codex harness, session import, remaining-usage
 display and Docker credential access controls. Kiro remains the default harness.
 Fork desktop updates are manual so the upstream updater cannot replace these
-changes. Python package metadata spells this version `0.5.0+fork.1.0` to comply
-with Python's version format; the app and release tag use `0.5.0-1.0`.
+changes. Python package metadata spells this version `0.5.0+fork.1.1` to comply
+with Python's version format; the app and release tag use `0.5.0-1.1`.
 
 The download links and one-line installers below are **upstream distributions**;
 they do not include this fork's additions.

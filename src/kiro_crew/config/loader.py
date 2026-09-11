@@ -772,7 +772,7 @@ def docker_registry_access_enabled() -> bool:
 
     try:
         state = json.loads(docker_registry_access_state_path().read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
+    except (OSError, ValueError, RecursionError):
         return False
     if not isinstance(state, dict) or state.get("enabled") is not True:
         return False

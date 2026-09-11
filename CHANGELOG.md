@@ -2,6 +2,26 @@
 
 All notable changes to KiroCrew are documented in this file.
 
+## [0.5.0-1.1] — 2026-09-11
+
+This update keeps the upstream 0.5.0 base and tightens Docker credential access.
+Native Codex support and existing session behavior remain unchanged.
+
+### Before you upgrade
+
+- **Explicit consent** — integrations enabling Docker credential access must send
+  an explicit duration and acknowledgement. The dashboard supplies both; disabling
+  access and existing valid grants keep working without new consent.
+
+### Notable fixes
+
+- **Malformed grants** — unreadable or deeply nested grant data disables access
+  instead of interrupting session startup with a decoder error.
+
+### Contributors
+
+@mrbeag
+
 ## [0.5.0-1.0] — 2026-09-06
 
 The fork moves to upstream Kiro Crew 0.5.0 and adds native Codex support through

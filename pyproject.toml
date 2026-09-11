@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kirocrew"
-# Python metadata uses a PEP 440 local version; the app/tag is 0.5.0-1.0.
-version = "0.5.0+fork.1.0"
+# Python metadata uses a PEP 440 local version; the app/tag is 0.5.0-1.1.
+version = "0.5.0+fork.1.1"
 description = "Personal AI agent that runs locally — chat via CLI, dashboard, desktop app, or messaging channels like Slack and Discord"
 readme = "README.md"
 # macOS (x86_64 + arm64) and Linux (x86_64 + aarch64), CPython 3.10-3.13.

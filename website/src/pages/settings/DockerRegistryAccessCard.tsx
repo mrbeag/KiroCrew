@@ -19,8 +19,8 @@ export default function DockerRegistryAccessCard() {
   })
   const { data, isLoading, isError } = accessQuery
   const save = useMutation({
-    mutationFn: ({ enabled: next, permanent: persistent }: { enabled: boolean; permanent?: boolean }) =>
-      api.saveDockerRegistryAccess(next, persistent === true),
+    mutationFn: ({ enabled: next, permanent: persistent, acknowledged }: { enabled: boolean; permanent?: boolean; acknowledged?: boolean }) =>
+      api.saveDockerRegistryAccess(next, persistent === true, acknowledged === true),
     onSuccess: snap => qc.setQueryData(['docker-registry-access'], snap),
   })
   const enabled = data?.enabled === true
@@ -116,7 +116,7 @@ export default function DockerRegistryAccessCard() {
               danger
               disabled={!ack || save.isPending}
               onClick={() => {
-                save.mutate({ enabled: true, permanent })
+                save.mutate({ enabled: true, permanent, acknowledged: ack })
                 setConfirm(false)
               }}
             >
