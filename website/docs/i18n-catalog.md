@@ -136,11 +136,12 @@ Authoring rules that follow:
 - German compounds hyphenate through the placeholder
   (`{{productName}}-Katalog`), matching how the literal compound was written.
 
-`setProductName()` (exported beside `initI18n`) is the edition override. It
-must run before `initI18n()`; the edition composition root is imported first
-in `main.tsx`, so that ordering holds by construction. A late call throws in
-dev rather than half-applying; in production it returns silently rather
-than crash the shell.
+`setProductName()` (exported beside `initI18n`) is the edition override. Call
+it from the edition composition root before the first React render. A bundler
+may initialize i18n while evaluating another static dependency first, so the
+setter updates both the pre-init seed and an already-created interpolation
+options object. It does not itself trigger a UI re-render and is therefore still
+a composition-time seam, not a runtime setting.
 
 ## Counts: never concatenate a plural suffix
 

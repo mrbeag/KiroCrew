@@ -816,16 +816,25 @@ else
   fi
 fi
 
-# A leftover staged marker from an earlier interrupted build is removed on
-# EVERY run, before any early exit: step 3b re-stages it when asked. This sits
-# ahead of the SKIP_ELECTRON return so a backend-only build cannot leave a
-# stale declaration behind for a hand-run electron-builder to pack.
-rm -f "$ELECTRON_DIR/EXTERNALLY-MANAGED"
+# A leftover staged marker or edition splash from an earlier interrupted build is
+# removed on EVERY run, before any early exit. A backend-only build therefore
+# cannot leave edition identity behind for a later hand-run electron-builder.
+rm -f "$ELECTRON_DIR/EXTERNALLY-MANAGED" "$ELECTRON_DIR/edition-loading.html"
 
 if [ "${SKIP_ELECTRON:-0}" = "1" ]; then
   log "SKIP_ELECTRON=1 — backend(s) ready under $ELECTRON_DIR/backend-dist/"
   exit 0
 fi
+
+# Stage optional edition-owned native shell assets under distinct filenames.
+# The helper validates a fixed allowlist and the same fail-closed opt-in as the
+# frontend edition build. One combined trap cleans both generated inputs so no
+# subsequent stock build or hand-run electron-builder can inherit them.
+cleanup_desktop_staging() {
+  rm -f "$ELECTRON_DIR/EXTERNALLY-MANAGED" "$ELECTRON_DIR/edition-loading.html"
+}
+trap cleanup_desktop_staging EXIT
+node "$ROOT/website/scripts/lib/editionDesktop.mjs" stage "$ELECTRON_DIR"
 
 # --- 3b. Baked EXTERNALLY-MANAGED marker (optional) --------------------------
 # An edition whose installs are owned by an external package manager (a Toolbox,
@@ -873,14 +882,9 @@ if [ -n "${KIROCREW_MANAGED_INSTALL_MARKER:-}" ]; then
     if (!parsed.updateCommand) { console.error("marker has no updateCommand: it would disable updates without offering any"); process.exit(1); }
   ' "$MARKER_SRC" || { echo "❌ KIROCREW_MANAGED_INSTALL_MARKER rejected: $MARKER_SRC" >&2; exit 1; }
   # Staged for THIS build only: electron-builder packs it below, and the copy
-  # must not outlive the run -- a later build of a different edition from the
-  # same tree (or a hand-run electron-builder) would otherwise pack the previous
-  # edition's commands. The unconditional rm above covers the next
-  # build-desktop.sh run; this covers every other exit path. The trap is armed
-  # BEFORE the copy so there is no instant at which the file exists without
-  # its cleanup -- an interrupt between the two would leave a stale marker for
-  # a hand-run `npm run dist` to pack.
-  trap 'rm -f "$ELECTRON_DIR/EXTERNALLY-MANAGED"' EXIT
+  # must not outlive the run. The combined desktop-staging trap was armed before
+  # any generated file was written, so an interrupt cannot leave this marker or
+  # an edition splash behind for a later hand-run electron-builder.
   cp "$MARKER_SRC" "$ELECTRON_DIR/EXTERNALLY-MANAGED"
   log "Baking EXTERNALLY-MANAGED marker into the app from $MARKER_SRC"
 fi

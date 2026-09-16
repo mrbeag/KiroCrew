@@ -53,11 +53,19 @@ describe('productName interpolation variable', () => {
     expect(copy).not.toContain('Kiro Crew')
   })
 
-  it('refuses a late override rather than half-applying it', () => {
-    // After init the variable has been handed to i18next; silently accepting
-    // the call would leave the UI unchanged while the caller believes it
-    // rebranded. Vitest runs with import.meta.env.DEV true, so this throws.
-    expect(() => setProductName('Acme')).toThrow(/before initI18n/)
+  it('updates an initialized instance before the edition first render', () => {
+    // Vite/Rolldown may evaluate another static dependency that initializes
+    // i18n before the composition-root body. The supported setter must update
+    // that live interpolation options object rather than silently keep stock.
+    try {
+      setProductName('Acme')
+      expect(i18next.t('test.updating_product')).toBe('Updating Acme…')
+      expect(i18next.t('test.updating_product', { productName: 'Call time' })).toBe(
+        'Updating Call time…',
+      )
+    } finally {
+      setProductName('Kiro Crew')
+    }
   })
 
   it('no catalog value hardcodes the product name outside the documented exceptions', () => {

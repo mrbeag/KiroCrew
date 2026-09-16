@@ -379,6 +379,13 @@ registerThemeBranding({
   mytheme: {
     logo: '/mytheme/logo.png',
 
+    // First-run and prerequisite panels: replace the lockup mark and the
+    // complete decorative layer. Omitting either keeps its stock counterpart.
+    onboarding: {
+      mark: MyBrandMark,
+      decorations: MyOnboardingDecorations,
+    },
+
     // Level 1: keep the stock carousel, swap the artwork it cycles.
     loaderIcons: [Sun, Moon, Star, Cloud, Comet],
 
@@ -387,6 +394,16 @@ registerThemeBranding({
   },
 })
 ```
+
+**`onboarding.mark`** replaces the stock lockup mascot in first-run and
+prerequisite panels. It receives the established sizing classes through a
+`className` prop; pass them to the rendered mark so narrow and desktop layouts
+stay aligned. **`onboarding.decorations`** replaces the whole floating-mascot
+layer and renders inside an `aria-hidden`, pointer-events-none, absolutely
+positioned wrapper. The component owns the decorative placement within that
+wrapper and must honour reduced motion when it animates. The two fields fall back
+independently: a custom mark may keep stock decorations, or custom decorations may
+keep the stock lockup mark.
 
 **`loaderIcons`** is the easy path and the one to reach for first. The default
 loader is a 4-slot carousel: each slot cross-fades between two icons, the slots

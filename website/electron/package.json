@@ -223,6 +223,7 @@
       "crew-companion/galleryWindow.js",
       "anime.global.js",
       "loading.html",
+      "edition-loading.html",
       "token-prompt.html",
       "icon.png",
       "icon-nightly.png",

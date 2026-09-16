@@ -2,7 +2,7 @@
  * Per-theme branding registry.
  *
  * A theme can decorate the shell beyond its color tokens: a custom bot name and
- * logo, a browser favicon, a decorative top-bar element, an aside widget,
+ * logo, browser favicon, first-run onboarding artwork, a decorative top-bar element, an aside widget,
  * always-mounted overlays, and a one-shot activation side-effect. Rather than
  * hard-coding `colorTheme === 'x' ? … : colorTheme === 'y' ? …` chains in
  * App.tsx and WelcomeView, those components read this registry, so adding a
@@ -23,6 +23,13 @@
 import type { ComponentType } from 'react'
 import { reportSeamCollision } from './apps/seamCollision'
 
+export interface OnboardingBranding {
+  /** Brand mark shown beside the product name in setup and prerequisite panels. */
+  mark?: ComponentType<{ className?: string }>
+  /** Decorative artwork behind onboarding copy. Omit to retain the stock mascots. */
+  decorations?: ComponentType
+}
+
 export interface ThemeBranding {
   /** Overrides the dashboard bot name (e.g. 'LumonClaw'). */
   botName?: string
@@ -32,6 +39,8 @@ export interface ThemeBranding {
   logoClass?: string
   /** Browser favicon path. Omit to keep the default '/logo.png'. */
   favicon?: string
+  /** First-run and prerequisite panel artwork. Omit for the stock ghost treatment. */
+  onboarding?: OnboardingBranding
   /** Decorative element in the center top-bar slot, chosen by resolved mode.
    *  (Themes that aren't mode-dependent set dark and light to the same one.) */
   topBar?: { dark?: ComponentType; light?: ComponentType }

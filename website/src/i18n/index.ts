@@ -128,21 +128,25 @@ let productName = DEFAULT_PRODUCT_NAME
 
 /**
  * Override the product name an edition renders. Call it from the edition
- * composition root (`extensions.tsx`), which `main.tsx` imports BEFORE
- * `initI18n()` runs — after init the variable has already been handed to
- * i18next, so a late call cannot take effect and is refused loudly in dev
- * rather than half-applying.
+ * composition root (`extensions.tsx`), which runs before the first React render.
+ * Bundlers may evaluate another static dependency that initializes i18n before
+ * the composition-root body, so this updates both the pre-init seed and an
+ * already-created interpolation options object.
  */
 export function setProductName(name: string): void {
-  if (i18next.isInitialized) {
-    if (import.meta.env.DEV) {
-      throw new Error('setProductName() must be called before initI18n()')
-    }
-    return
-  }
-  // Stored trimmed: accidental edge whitespace would render into every string.
   const trimmed = name.trim()
-  if (trimmed) productName = trimmed
+  if (!trimmed) return
+  productName = trimmed
+  if (i18next.isInitialized) {
+    const interpolation = i18next.options.interpolation ?? {}
+    i18next.options.interpolation = {
+      ...interpolation,
+      defaultVariables: {
+        ...(interpolation.defaultVariables ?? {}),
+        productName: trimmed,
+      },
+    }
+  }
 }
 
 /**

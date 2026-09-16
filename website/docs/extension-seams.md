@@ -161,6 +161,23 @@ own static tree, and core CI pins that file byte-identical to
 drift apart. An edition that overlays the PWA icons but leaves the gateway logo
 stock reintroduces exactly that drift — brand one, brand both.
 
+## Desktop pre-boot branding: `desktop/` overlay
+
+The native Electron splash appears before the dashboard and cannot consume React
+theme branding. An edition may provide `desktop/loading.html`; the desktop build
+validates that `desktop/` contains only allowlisted files, stages the page under
+the distinct packaged name `edition-loading.html`, and removes it on every build
+entry and exit. Electron chooses the staged edition page when present and otherwise
+loads the stock `loading.html` on cold boot and every recovery path.
+
+The fixed allowlist currently contains only `loading.html`. It deliberately does
+not permit `main.js`, package metadata, executable icons, or arbitrary directories:
+an edition can own the splash document without shadowing native control logic or
+silently widening what its build input may replace. Composition requires the same
+`KIROCREW_EDITION_DIR` plus `KIROCREW_ALLOW_EDITION=1` pair as the frontend; an
+edition directory without the opt-in fails closed. `SKIP_ELECTRON=1` stages
+nothing, so backend-only builds cannot leave a native asset behind.
+
 ## Edition peer-dependency rule
 
 An edition dir resolves bare imports from its OWN `node_modules`, so any
@@ -324,12 +341,15 @@ ships in the edition's own overlay: this seam contributes only the picker entry.
 `value` already in `THEMES`, or already registered by an earlier call, is rejected
 (core wins).
 
-**Theme branding reaches three consumers.** `getThemeBranding(colorTheme)` drives
-the `App.tsx` shell chrome, `WelcomeView.tsx` (the new-session brand mark), and
+**Theme branding reaches four consumers.** `getThemeBranding(colorTheme)` drives
+the `App.tsx` shell chrome, `WelcomeView.tsx` (the new-session brand mark),
+`OnboardingChapterShell.tsx` (first-run/prerequisite mark and decorative art), and
 `pages/chat/ChatFooter.tsx` (the turn-running loader). A registered theme's `logo`
 shows in the first two, falling back to the stock ghost mark when the theme
-registers none. The loader contract is documented in
-[theming-contract](theming-contract.md).
+registers none. `branding.onboarding.mark` replaces the onboarding lockup mark,
+and `branding.onboarding.decorations` replaces the complete decorative mascot
+layer; omitting either field preserves its stock counterpart. The loader contract
+is documented in [theming-contract](theming-contract.md).
 
 A branding's optional `onActivate` side-effect fires on each transition into that
 theme, including the first render for the initially-active theme, because the
@@ -581,11 +601,13 @@ displayed product name (authoring rules:
 defaulting to `Kiro Crew`, so the stock build renders unchanged text.
 
 An edition rebrands by calling `setProductName('…')` (exported from
-`src/i18n`) in its composition root. The root is imported before `main.tsx`
-calls `initI18n()`, so the ordering holds by construction; a call after init
-throws in dev rather than half-applying (in production it returns silently
-rather than crash the shell). Like the API transport above, this is
-a single exported function rather than a registry: the core consumes the value
+`src/i18n`) in its composition root. The root runs before the first React render.
+Bundlers may evaluate another static dependency that initializes i18n before the
+composition-root body, so the setter updates both the pre-init seed and an
+already-created interpolation options object. A call-time `productName` still
+wins. Registration remains a module-load operation: calling it after UI has
+rendered does not itself trigger a re-render. Like the API transport below, this
+is a single exported function rather than a registry: the core consumes the value
 itself, there is nothing to enumerate, and a whole-catalog transform hook would
 hand an edition the power to break any string for what is a one-variable
 substitution.
